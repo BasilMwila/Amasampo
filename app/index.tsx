@@ -44,7 +44,7 @@ export default function LandingPage() {
   useEffect(() => {
     if (!isLoading && user) {
       // User is already logged in, redirect to main app
-      router.replace('/(tabs)');
+      router.replace('/(tabs)' as any);
     }
   }, [user, isLoading, router]);
 
@@ -122,8 +122,8 @@ export default function LandingPage() {
         <View style={styles.testimonialSection}>
           <View style={styles.testimonialCard}>
             <Text style={styles.testimonialText}>
-              "This marketplace made it so easy to sell my homemade products. 
-              I&apos;ve connected with amazing customers in my neighborhood!"
+              &ldquo;This marketplace made it so easy to sell my homemade products. 
+              I&apos;ve connected with amazing customers in my neighborhood!&rdquo;
             </Text>
             <View style={styles.testimonialAuthor}>
               <View style={styles.testimonialAvatar}>
