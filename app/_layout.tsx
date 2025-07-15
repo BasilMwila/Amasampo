@@ -1,10 +1,11 @@
+ 
+// File: app/_layout.tsx - Updated with Cart Context
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { createContext, useContext, useEffect, useState } from 'react';
-
-
+import { CartProvider } from './contexts/CartContext';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -49,30 +50,44 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Check for stored authentication
+    // In a real app, you'd check AsyncStorage or secure storage here
     setTimeout(() => {
       setIsLoading(false);
     }, 1000);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    const foundUser = mockUsers.find(u => u.email === email);
-    if (foundUser) {
-      setUser(foundUser);
-      return true;
+    try {
+      const foundUser = mockUsers.find(u => u.email === email);
+      if (foundUser) {
+        setUser(foundUser);
+        // In a real app, you'd store the auth token here
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
     }
-    return false;
   };
 
   const register = async (userData: any) => {
-    const newUser = {
-      id: Date.now(),
-      ...userData
-    };
-    setUser(newUser);
+    try {
+      const newUser = {
+        id: Date.now(),
+        ...userData
+      };
+      setUser(newUser);
+      // In a real app, you'd make an API call here
+    } catch (error) {
+      console.error('Registration error:', error);
+      throw error;
+    }
   };
 
   const logout = () => {
     setUser(null);
+    // In a real app, you'd clear the auth token here
   };
 
   return (
@@ -83,7 +98,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 }
 
 function RootLayoutNav() {
-
   const { user, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
@@ -103,14 +117,40 @@ function RootLayoutNav() {
   }, [user, segments, isLoading, router]);
 
   return (
-    <ThemeProvider value={ DefaultTheme}>
+    <ThemeProvider value={DefaultTheme}>
       <Stack>
         <Stack.Screen name="auth/login" options={{ headerShown: false }} />
         <Stack.Screen name="auth/register" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        
+        {/* Product & Shopping */}
         <Stack.Screen name="product/[id]" options={{ title: 'Product Details' }} />
+        <Stack.Screen name="cart/index" options={{ title: 'Shopping Cart' }} />
+        <Stack.Screen name="checkout/index" options={{ title: 'Checkout' }} />
+        <Stack.Screen name="search/index" options={{ title: 'Search' }} />
+        
+        {/* Orders & Reviews */}
+        <Stack.Screen name="orders/index" options={{ title: 'Orders' }} />
+        <Stack.Screen name="orders/[id]" options={{ title: 'Order Details' }} />
+        <Stack.Screen name="reviews/[id]" options={{ title: 'Reviews' }} />
+        
+        {/* Communication */}
         <Stack.Screen name="chat/[id]" options={{ title: 'Chat' }} />
+        <Stack.Screen name="notifications/index" options={{ title: 'Notifications' }} />
+        
+        {/* Seller Features */}
+        <Stack.Screen name="dashboard/index" options={{ title: 'Dashboard' }} />
+        <Stack.Screen name="products/manage" options={{ title: 'Manage Products' }} />
+        
+        {/* Account & Settings */}
         <Stack.Screen name="payment/methods" options={{ title: 'Payment Methods' }} />
+        <Stack.Screen name="addresses/index" options={{ title: 'Addresses' }} />
+        <Stack.Screen name="settings/index" options={{ title: 'Settings' }} />
+        
+        {/* Support & Legal */}
+        <Stack.Screen name="help/index" options={{ title: 'Help & Support' }} />
+        <Stack.Screen name="legal/index" options={{ title: 'Legal' }} />
       </Stack>
     </ThemeProvider>
   );
@@ -133,7 +173,9 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <CartProvider>
+        <RootLayoutNav />
+      </CartProvider>
     </AuthProvider>
   );
 }
