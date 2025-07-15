@@ -36,70 +36,99 @@ interface Product {
 const mockProducts: Product[] = [
   {
     id: 1,
-    name: 'Organic Apples',
-    price: 2.99,
-    quantity: 50,
+    name: 'Wireless Bluetooth Headphones',
+    price: 49.99,
+    quantity: 25,
     sellerId: 1,
-    sellerName: 'John Smith',
-    shopName: 'Smith Farm Market',
-    category: 'Fruits',
-    image: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=300&h=200&fit=crop',
-    description: 'Fresh organic apples from local farm',
+    sellerName: 'TechStore Plus',
+    shopName: 'Electronics Hub',
+    category: 'Electronics',
+    image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300&h=200&fit=crop',
+    description: 'High-quality wireless headphones with noise cancellation',
     rating: 4.8,
-    reviewCount: 23,
+    reviewCount: 156,
     distance: 2.3,
     isFeatured: true,
   },
   {
     id: 2,
-    name: 'Fresh Bread',
-    price: 3.50,
-    quantity: 20,
+    name: 'Vintage Leather Jacket',
+    price: 89.99,
+    quantity: 8,
     sellerId: 2,
-    sellerName: 'Mary Johnson',
-    shopName: "Mary's Bakery",
-    category: 'Bakery',
-    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300&h=200&fit=crop',
-    description: 'Freshly baked daily',
+    sellerName: 'Fashion Forward',
+    shopName: "Style Studio",
+    category: 'Clothing',
+    image: 'https://images.unsplash.com/photo-1551028719-00167b16eac5?w=300&h=200&fit=crop',
+    description: 'Genuine leather jacket in excellent condition',
     rating: 4.9,
-    reviewCount: 45,
+    reviewCount: 78,
     distance: 1.2,
     isOnSale: true,
-    originalPrice: 4.00,
+    originalPrice: 120.00,
   },
   {
     id: 3,
-    name: 'Local Honey',
-    price: 8.99,
+    name: 'Smart Home Security Camera',
+    price: 79.99,
     quantity: 15,
     sellerId: 1,
-    sellerName: 'John Smith',
-    shopName: 'Smith Farm Market',
-    category: 'Pantry',
-    image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=300&h=200&fit=crop',
-    description: 'Pure local honey',
+    sellerName: 'TechStore Plus',
+    shopName: 'Electronics Hub',
+    category: 'Electronics',
+    image: 'https://images.unsplash.com/photo-1558002038-bb4237b54cbb?w=300&h=200&fit=crop',
+    description: '1080p HD security camera with night vision',
     rating: 4.7,
-    reviewCount: 18,
+    reviewCount: 92,
     distance: 2.3,
     isFeatured: true,
   },
   {
     id: 4,
-    name: 'Organic Tomatoes',
-    price: 4.25,
+    name: 'Yoga Mat with Carrying Bag',
+    price: 24.99,
     quantity: 30,
     sellerId: 3,
-    sellerName: 'Farm Fresh Co',
-    category: 'Vegetables',
-    image: 'https://images.unsplash.com/photo-1546470427-e2c0531b47e4?w=300&h=200&fit=crop',
-    description: 'Vine-ripened organic tomatoes',
+    sellerName: 'FitLife Store',
+    shopName: 'Sports Central',
+    category: 'Sports',
+    image: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=300&h=200&fit=crop',
+    description: 'Premium non-slip yoga mat with carrying case',
     rating: 4.6,
-    reviewCount: 12,
+    reviewCount: 134,
     distance: 5.1,
+  },
+  {
+    id: 5,
+    name: 'Bestselling Fiction Novel Set',
+    price: 35.99,
+    quantity: 12,
+    sellerId: 4,
+    sellerName: 'BookWorm Corner',
+    category: 'Books',
+    image: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=300&h=200&fit=crop',
+    description: 'Collection of 5 bestselling novels',
+    rating: 4.8,
+    reviewCount: 67,
+    distance: 3.8,
+  },
+  {
+    id: 6,
+    name: 'Indoor Plant Collection',
+    price: 45.00,
+    quantity: 18,
+    sellerId: 5,
+    sellerName: 'Green Thumb Nursery',
+    category: 'Home & Garden',
+    image: 'https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=300&h=200&fit=crop',
+    description: 'Set of 3 low-maintenance indoor plants',
+    rating: 4.5,
+    reviewCount: 89,
+    distance: 4.2,
   },
 ];
 
-const categories = ['All', 'Fruits', 'Vegetables', 'Bakery', 'Dairy', 'Pantry'];
+const categories = ['All', 'Electronics', 'Clothing', 'Home & Garden', 'Sports', 'Books', 'Toys', 'Health', 'Automotive'];
 
 export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>(mockProducts);
@@ -248,10 +277,14 @@ export default function HomeScreen() {
             >
               <Text style={styles.categoryIcon}>
                 {category === 'All' ? '🏪' :
-                 category === 'Fruits' ? '🍎' :
-                 category === 'Vegetables' ? '🥕' :
-                 category === 'Bakery' ? '🍞' :
-                 category === 'Dairy' ? '🧀' : '🥫'}
+                 category === 'Electronics' ? '📱' :
+                 category === 'Clothing' ? '👕' :
+                 category === 'Home & Garden' ? '🏡' :
+                 category === 'Sports' ? '⚽' :
+                 category === 'Books' ? '📚' :
+                 category === 'Toys' ? '🧸' :
+                 category === 'Health' ? '💊' :
+                 category === 'Automotive' ? '🚗' : '📦'}
               </Text>
               <Text
                 style={[
@@ -540,7 +573,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#fff',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
