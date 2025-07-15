@@ -1,16 +1,16 @@
-// File: app/(tabs)/index.tsx - Updated with new features
 /* eslint-disable @typescript-eslint/no-unused-vars */
+// File: app/(tabs)/index.tsx - Updated with new features
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    FlatList,
-    Image,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  FlatList,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import { useAuth } from '../_layout';
 
@@ -103,15 +103,13 @@ const categories = ['All', 'Fruits', 'Vegetables', 'Bakery', 'Dairy', 'Pantry'];
 
 export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>(mockProducts);
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [cartCount] = useState(3); // Would be from context/state in real app
   const { user } = useAuth();
 
   const filteredProducts = products.filter(product => {
-    const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
-    return matchesSearch && matchesCategory;
+    return matchesCategory;
   });
 
   const featuredProducts = products.filter(product => product.isFeatured);
@@ -542,7 +540,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    shadowColor: '#000',
+    shadowColor: '#fff',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,

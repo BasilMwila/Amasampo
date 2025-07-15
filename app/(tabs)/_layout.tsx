@@ -1,6 +1,7 @@
-// File: app/(tabs)/_layout.tsx - Updated with cart
+// File: app/(tabs)/_layout.tsx - Fixed version
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { Text } from 'react-native';
 import { useAuth } from '../_layout';
 
 export default function TabLayout() {
@@ -30,10 +31,10 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, focused }) => (
-            <span style={{ 
+            <Text style={{ 
               fontSize: focused ? 22 : 20,
-              transition: 'all 0.2s ease'
-            }}>🏠</span>
+              color: color
+            }}>🏠</Text>
           ),
           headerShown: false,
         }}
@@ -44,72 +45,70 @@ export default function TabLayout() {
         options={{
           title: 'Search',
           tabBarIcon: ({ color, focused }) => (
-            <span style={{ 
+            <Text style={{ 
               fontSize: focused ? 22 : 20,
-              transition: 'all 0.2s ease'
-            }}>🔍</span>
+              color: color
+            }}>🔍</Text>
           ),
           headerShown: false,
         }}
       />
 
-      {user?.type === 'buyer' && (
-        <Tabs.Screen
-          name="cart"
-          options={{
-            title: 'Cart',
-            tabBarIcon: ({ color, focused }) => (
-              <span style={{ 
-                fontSize: focused ? 22 : 20,
-                transition: 'all 0.2s ease'
-              }}>🛒</span>
-            ),
-            headerShown: false,
-            tabBarBadge: 3, // Would be dynamic in real app
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="cart"
+        options={{
+          title: 'Cart',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ 
+              fontSize: focused ? 22 : 20,
+              color: color
+            }}>🛒</Text>
+          ),
+          headerShown: false,
+          tabBarBadge: user?.type === 'buyer' ? 3 : undefined,
+          href: user?.type === 'buyer' ? '/(tabs)/cart' : null,
+        }}
+      />
 
       <Tabs.Screen
         name="messages"
         options={{
           title: 'Messages',
           tabBarIcon: ({ color, focused }) => (
-            <span style={{ 
+            <Text style={{ 
               fontSize: focused ? 22 : 20,
-              transition: 'all 0.2s ease'
-            }}>💬</span>
+              color: color
+            }}>💬</Text>
           ),
           headerShown: false,
-          tabBarBadge: user?.type === 'seller' ? 2 : undefined, // Would be dynamic
+          tabBarBadge: user?.type === 'seller' ? 2 : undefined,
         }}
       />
 
-      {user?.type === 'seller' && (
-        <Tabs.Screen
-          name="product"
-          options={{
-            title: 'Add Product',
-            tabBarIcon: ({ color, focused }) => (
-              <span style={{ 
-                fontSize: focused ? 22 : 20,
-                transition: 'all 0.2s ease'
-              }}>➕</span>
-            ),
-            headerShown: false,
-          }}
-        />
-      )}
+      <Tabs.Screen
+        name="product"
+        options={{
+          title: 'Add Product',
+          tabBarIcon: ({ color, focused }) => (
+            <Text style={{ 
+              fontSize: focused ? 22 : 20,
+              color: color
+            }}>➕</Text>
+          ),
+          headerShown: false,
+          href: user?.type === 'seller' ? '/(tabs)/product' : null,
+        }}
+      />
 
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
-            <span style={{ 
+            <Text style={{ 
               fontSize: focused ? 22 : 20,
-              transition: 'all 0.2s ease'
-            }}>👤</span>
+              color: color
+            }}>👤</Text>
           ),
           headerShown: false,
         }}
