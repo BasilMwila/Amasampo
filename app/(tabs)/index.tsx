@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// File: app/(tabs)/index.tsx - Updated with new features
+// File: app/(tabs)/index.tsx - Updated with corrected routes
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
@@ -145,7 +145,7 @@ export default function HomeScreen() {
   const onSaleProducts = products.filter(product => product.isOnSale);
 
   const handleProductPress = (product: Product) => {
-    router.push(`/product/${product.id}` as any);
+    router.push(`/products/${product.id}` as any);
   };
 
   const handleMessageSeller = (sellerId: number) => {
@@ -153,7 +153,7 @@ export default function HomeScreen() {
   };
 
   const handleSearch = () => {
-    router.push('/(tabs)/search' as any);
+    router.push('/search' as any);
   };
 
   const handleCart = () => {
@@ -303,7 +303,7 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Featured Products</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/search' as any)}>
+              <TouchableOpacity onPress={() => router.push('/search' as any)}>
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             </View>
@@ -324,7 +324,7 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>🔥 On Sale</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/search' as any)}>
+              <TouchableOpacity onPress={() => router.push('/search' as any)}>
                 <Text style={styles.seeAllText}>See All</Text>
               </TouchableOpacity>
             </View>
