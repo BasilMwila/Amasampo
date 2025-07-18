@@ -1,6 +1,6 @@
 /* eslint-disable react-hooks/exhaustive-deps */
  
-// File: app/(tabs)/index.tsx - Updated with Real API Integration
+// File: app/(tabs)/index.tsx - Fixed type issues and API integration
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
@@ -15,26 +15,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../_layout';
 import { CATEGORIES } from '../constants/constants';
-import { apiService } from '../services/api';
-
-interface Product {
-  id: number;
-  name: string;
-  price: number;
-  quantity: number;
-  sellerId: number;
-  sellerName: string;
-  shopName?: string;
-  category: string;
-  image: string;
-  description?: string;
-  rating: number;
-  reviewCount: number;
-  distance: number;
-  isFeatured?: boolean;
-  isOnSale?: boolean;
-  originalPrice?: number;
-}
+import { apiService, type Product } from '../services/api';
 
 export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -50,7 +31,22 @@ export default function HomeScreen() {
   const loadProducts = async () => {
     try {
       setLoading(true);
-      const filters = selectedCategory !== 'All' ? { category: selectedCategory } : {};
+      
+      // Build filters based on selected category
+      const filters: {
+        category_id?: number;
+        is_featured?: boolean;
+        page?: number;
+        limit?: number;
+      } = {};
+      
+      // For now, we'll just load all products and filter client-side
+      // In a real app, you'd want to get category IDs from the API
+      if (selectedCategory !== 'All') {
+        // You would need to map category names to IDs here
+        // For now, we'll filter client-side
+      }
+      
       const response = await apiService.getProducts(filters);
       setProducts(response.products || []);
     } catch (error) {
@@ -63,12 +59,12 @@ export default function HomeScreen() {
   };
 
   const filteredProducts = products.filter(product => {
-    const matchesCategory = selectedCategory === 'All' || product.category === selectedCategory;
+    const matchesCategory = selectedCategory === 'All' || product.category_name === selectedCategory;
     return matchesCategory;
   });
 
-  const featuredProducts = products.filter(product => product.isFeatured);
-  const onSaleProducts = products.filter(product => product.isOnSale);
+  const featuredProducts = products.filter(product => product.is_featured);
+  const onSaleProducts = products.filter(product => product.is_on_sale);
 
   const handleProductPress = (product: Product) => {
     router.push(`/products/${product.id}` as any);
@@ -90,60 +86,65 @@ export default function HomeScreen() {
     router.push('/notifications' as any);
   };
 
-  const ProductCard = ({ product, isHorizontal = false }: { product: Product; isHorizontal?: boolean }) => (
-    <TouchableOpacity
-      style={[styles.productCard, isHorizontal && styles.horizontalCard]}
-      onPress={() => handleProductPress(product)}
-    >
-      <View style={styles.imageContainer}>
-        <Image source={{ uri: product.image }} style={[styles.productImage, isHorizontal && styles.horizontalImage]} />
-        {product.isOnSale && (
-          <View style={styles.saleBadge}>
-            <Text style={styles.saleBadgeText}>SALE</Text>
-          </View>
-        )}
-        {product.isFeatured && (
-          <View style={styles.featuredBadge}>
-            <Text style={styles.featuredBadgeText}>⭐</Text>
-          </View>
-        )}
-      </View>
-      
-      <View style={styles.productInfo}>
-        <Text style={styles.productName} numberOfLines={2}>{product.name}</Text>
-        <Text style={styles.sellerName}>{product.sellerName}</Text>
-        
-        <View style={styles.ratingRow}>
-          <Text style={styles.rating}>⭐ {product.rating}</Text>
-          <Text style={styles.distance}>{product.distance}km</Text>
+  const ProductCard = ({ product, isHorizontal = false }: { product: Product; isHorizontal?: boolean }) => {
+    return (
+      <TouchableOpacity
+        style={[styles.productCard, isHorizontal && styles.horizontalCard]}
+        onPress={() => handleProductPress(product)}
+      >
+        <View style={styles.imageContainer}>
+          <Image 
+            source={{ uri: product.image_url || '' }} 
+            style={[styles.productImage, isHorizontal && styles.horizontalImage]} 
+          />
+          {product.is_on_sale === true && (
+            <View style={styles.saleBadge}>
+              <Text style={styles.saleBadgeText}>SALE</Text>
+            </View>
+          )}
+          {product.is_featured === true && (
+            <View style={styles.featuredBadge}>
+              <Text style={styles.featuredBadgeText}>⭐</Text>
+            </View>
+          )}
         </View>
         
-        <View style={styles.priceRow}>
-          <View>
-            <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
-            {product.originalPrice && (
-              <Text style={styles.originalPrice}>${product.originalPrice.toFixed(2)}</Text>
-            )}
+        <View style={styles.productInfo}>
+          <Text style={styles.productName} numberOfLines={2}>{product.name || ''}</Text>
+          <Text style={styles.sellerName}>{product.seller_name || ''}</Text>
+          
+          <View style={styles.ratingRow}>
+            <Text style={styles.rating}>⭐ {product.rating || 0}</Text>
+            <Text style={styles.distance}>{product.distance || 0}km</Text>
           </View>
-          <Text style={styles.productQuantity}>
-            {product.quantity > 0 ? `${product.quantity} left` : 'Out of stock'}
-          </Text>
-        </View>
+          
+          <View style={styles.priceRow}>
+            <View>
+              <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
+              {product.original_price && product.original_price > 0 && (
+                <Text style={styles.originalPrice}>${product.original_price.toFixed(2)}</Text>
+              )}
+            </View>
+            <Text style={styles.productQuantity}>
+              {product.quantity > 0 ? `${product.quantity} left` : 'Out of stock'}
+            </Text>
+          </View>
 
-        {user?.type === 'buyer' && product.sellerId !== user.id && (
-          <TouchableOpacity
-            style={styles.messageButton}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleMessageSeller(product.sellerId);
-            }}
-          >
-            <Text style={styles.messageButtonText}>Message Seller</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </TouchableOpacity>
-  );
+          {user?.user_type === 'buyer' && product.seller_id !== user.id && (
+            <TouchableOpacity
+              style={styles.messageButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleMessageSeller(product.seller_id);
+              }}
+            >
+              <Text style={styles.messageButtonText}>Message Seller</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -161,7 +162,7 @@ export default function HomeScreen() {
                 <Text style={styles.notificationBadgeText}>3</Text>
               </View>
             </TouchableOpacity>
-            {user?.type === 'buyer' && (
+            {user?.user_type === 'buyer' && (
               <TouchableOpacity style={styles.headerButton} onPress={handleCart}>
                 <Text style={styles.headerButtonIcon}>🛒</Text>
                 {cartCount > 0 && (
@@ -304,7 +305,7 @@ export default function HomeScreen() {
         </View>
 
         {/* Quick Actions for Sellers */}
-        {user?.type === 'seller' && (
+        {user?.user_type === 'seller' && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             <View style={styles.quickActions}>

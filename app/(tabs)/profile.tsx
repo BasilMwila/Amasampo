@@ -1,14 +1,14 @@
-// File: app/(tabs)/profile.tsx - Updated with all features
+// File: app/(tabs)/profile.tsx - Updated with correct user type property
 import { useRouter } from 'expo-router';
 import React from 'react';
 import {
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
 
@@ -36,11 +36,11 @@ export default function ProfileScreen() {
     {
       section: 'Account & Orders',
       items: [
-        ...(user?.type === 'buyer' ? [
+        ...(user?.user_type === 'buyer' ? [
           { icon: '📦', title: 'My Orders', subtitle: 'Track your purchases', route: '/orders' },
           { icon: '📍', title: 'Delivery Addresses', subtitle: 'Manage delivery locations', route: '/addresses' },
         ] : []),
-        ...(user?.type === 'seller' ? [
+        ...(user?.user_type === 'seller' ? [
           { icon: '📊', title: 'Dashboard', subtitle: 'Sales overview & analytics', route: '/dashboard' },
           { icon: '📦', title: 'Sales Orders', subtitle: 'Manage customer orders', route: '/orders' },
           { icon: '📝', title: 'Manage Products', subtitle: 'Edit your product catalog', route: '/products/manage' },
@@ -121,17 +121,17 @@ export default function ProfileScreen() {
               <Text style={styles.userEmail}>{user?.email}</Text>
               <View style={styles.userTypeBadge}>
                 <Text style={styles.userTypeText}>
-                  {user?.type === 'seller' ? '🏪 Seller' : '🛒 Buyer'}
+                  {user?.user_type === 'seller' ? '🏪 Seller' : '🛒 Buyer'}
                 </Text>
               </View>
-              {user?.shopName && (
-                <Text style={styles.shopName}>Shop: {user.shopName}</Text>
+              {user?.shop_name && (
+                <Text style={styles.shopName}>Shop: {user.shop_name}</Text>
               )}
             </View>
           </View>
 
           {/* Quick Stats for Sellers */}
-          {user?.type === 'seller' && (
+          {user?.user_type === 'seller' && (
             <View style={styles.quickStats}>
               <TouchableOpacity
                 style={styles.statItem}
@@ -158,7 +158,7 @@ export default function ProfileScreen() {
           )}
 
           {/* Quick Stats for Buyers */}
-          {user?.type === 'buyer' && (
+          {user?.user_type === 'buyer' && (
             <View style={styles.quickStats}>
               <TouchableOpacity
                 style={styles.statItem}

@@ -1,4 +1,4 @@
-// File: app/(tabs)/_layout.tsx - Fixed version
+// File: app/(tabs)/_layout.tsx - Fixed version with consistent user type
 import { Tabs } from 'expo-router';
 import React from 'react';
 import { Text } from 'react-native';
@@ -65,8 +65,8 @@ export default function TabLayout() {
             }}>🛒</Text>
           ),
           headerShown: false,
-          tabBarBadge: user?.type === 'buyer' ? 3 : undefined,
-          href: user?.type === 'buyer' ? '/(tabs)/cart' : null,
+          tabBarBadge: user?.user_type === 'buyer' ? 3 : undefined,
+          href: user?.user_type === 'buyer' ? '/(tabs)/cart' : null,
         }}
       />
 
@@ -81,7 +81,7 @@ export default function TabLayout() {
             }}>💬</Text>
           ),
           headerShown: false,
-          tabBarBadge: user?.type === 'seller' ? 2 : undefined,
+          tabBarBadge: user?.user_type === 'seller' ? 2 : undefined,
         }}
       />
 
@@ -96,7 +96,7 @@ export default function TabLayout() {
             }}>➕</Text>
           ),
           headerShown: false,
-          href: user?.type === 'seller' ? '/(tabs)/product' : null,
+          href: user?.user_type === 'seller' ? '/(tabs)/product' : null,
         }}
       />
 
