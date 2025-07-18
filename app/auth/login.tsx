@@ -1,114 +1,210 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
-import { Link } from 'expo-router';
+/* eslint-disable react/no-unescaped-entities */
+// app/auth/login.tsx - Login screen with real API integration
+import { router } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
+import { COLORS, PATTERNS } from '../constants/constants';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const { login, loading } = useAuth();
+
+  const validateForm = () => {
+    const newErrors: { email?: string; password?: string } = {};
+
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+    } else if (!PATTERNS.EMAIL.test(email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    if (!password) {
+      newErrors.password = 'Password is required';
+    } else if (password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleLogin = async () => {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+    if (!validateForm()) return;
+
+    const success = await login(email.trim(), password);
+    if (success) {
+      // Navigation is handled by the auth context
+      router.replace('/(tabs)' as any);
+    }
+  };
+
+  const handleForgotPassword = () => {
+    if (!email.trim()) {
+      Alert.alert('Enter Email', 'Please enter your email address first');
       return;
     }
 
-    setLoading(true);
-    try {
-      const success = await login(email, password);
-      if (!success) {
-        Alert.alert('Error', 'Invalid credentials');
-      }
-    } catch (error) {
-      Alert.alert('Error', 'Login failed');
-    } finally {
-      setLoading(false);
+    if (!PATTERNS.EMAIL.test(email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
     }
+
+    Alert.alert(
+      'Reset Password',
+      'Password reset functionality will be implemented soon.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const navigateToRegister = () => {
+    router.push('/auth/register' as any);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
         <View style={styles.content}>
-          <Text style={styles.title}>Welcome to Marketplace</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Welcome Back!</Text>
+            <Text style={styles.subtitle}>Sign in to continue shopping</Text>
+          </View>
 
+          {/* Form */}
           <View style={styles.form}>
-            <TextInput
-              style={styles.input}
-              placeholder="Email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-            />
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Email Address</Text>
+              <TextInput
+                style={[styles.input, errors.email && styles.inputError]}
+                placeholder="Enter your email"
+                value={email}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  if (errors.email) {
+                    setErrors(prev => ({ ...prev, email: undefined }));
+                  }
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!loading}
+              />
+              {errors.email && (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              )}
+            </View>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoComplete="password"
-            />
+            <View style={styles.inputContainer}>
+              <Text style={styles.label}>Password</Text>
+              <View style={styles.passwordContainer}>
+                <TextInput
+                  style={[
+                    styles.input, 
+                    styles.passwordInput,
+                    errors.password && styles.inputError
+                  ]}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    if (errors.password) {
+                      setErrors(prev => ({ ...prev, password: undefined }));
+                    }
+                  }}
+                  secureTextEntry={!showPassword}
+                  editable={!loading}
+                />
+                <TouchableOpacity
+                  style={styles.passwordToggle}
+                  onPress={() => setShowPassword(!showPassword)}
+                  disabled={loading}
+                >
+                  <Text style={styles.passwordToggleText}>
+                    {showPassword ? '🙈' : '👁️'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              {errors.password && (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              )}
+            </View>
 
-            <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
-              onPress={handleLogin}
+            <TouchableOpacity 
+              style={styles.forgotPassword}
+              onPress={handleForgotPassword}
               disabled={loading}
             >
-              <Text style={styles.buttonText}>
-                {loading ? 'Signing in...' : 'Sign In'}
-              </Text>
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
+          </View>
 
-            <View style={styles.footer}>
-              <Text style={styles.footerText}>Don&apos;t have an account? </Text>
-              <Link href="/auth/register" asChild>
-                <TouchableOpacity>
-                  <Text style={styles.linkText}>Sign Up</Text>
-                </TouchableOpacity>
-              </Link>
-            </View>
+          {/* Login Button */}
+          <TouchableOpacity
+            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={COLORS.CARD} />
+                <Text style={styles.loginButtonText}>Signing In...</Text>
+              </View>
+            ) : (
+              <Text style={styles.loginButtonText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
 
-            <View style={styles.demoContainer}>
-              <Text style={styles.demoTitle}>Demo Accounts:</Text>
+          {/* Demo Accounts */}
+          <View style={styles.demoSection}>
+            <Text style={styles.demoTitle}>Demo Accounts</Text>
+            <View style={styles.demoButtons}>
               <TouchableOpacity
                 style={styles.demoButton}
                 onPress={() => {
-                  setEmail('john@email.com');
-                  setPassword('password');
+                  setEmail('mary@example.com');
+                  setPassword('password123');
                 }}
+                disabled={loading}
               >
-                <Text style={styles.demoText}>Seller Account</Text>
+                <Text style={styles.demoButtonText}>🛒 Demo Buyer</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.demoButton}
                 onPress={() => {
-                  setEmail('bob@email.com');
-                  setPassword('password');
+                  setEmail('john@example.com');
+                  setPassword('password123');
                 }}
+                disabled={loading}
               >
-                <Text style={styles.demoText}>Buyer Account</Text>
+                <Text style={styles.demoButtonText}>🏪 Demo Seller</Text>
               </TouchableOpacity>
             </View>
+          </View>
+
+          {/* Register Link */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={navigateToRegister} disabled={loading}>
+              <Text style={styles.registerLink}>Sign Up</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -119,92 +215,147 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: COLORS.BACKGROUND,
   },
   content: {
     flex: 1,
+    padding: 24,
     justifyContent: 'center',
-    paddingHorizontal: 24,
+  },
+  header: {
+    alignItems: 'center',
+    marginBottom: 40,
   },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
-    textAlign: 'center',
+    color: COLORS.TEXT_PRIMARY,
     marginBottom: 8,
-    color: '#1a1a1a',
   },
   subtitle: {
     fontSize: 16,
+    color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
-    marginBottom: 32,
-    color: '#6b7280',
   },
   form: {
-    gap: 16,
+    marginBottom: 32,
+  },
+  inputContainer: {
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 8,
   },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: COLORS.BORDER,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
+    color: COLORS.TEXT_PRIMARY,
   },
-  button: {
-    backgroundColor: '#3b82f6',
+  inputError: {
+    borderColor: COLORS.ERROR,
+  },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 50,
+  },
+  passwordToggle: {
+    position: 'absolute',
+    right: 16,
+    top: 16,
+    bottom: 16,
+    justifyContent: 'center',
+  },
+  passwordToggleText: {
+    fontSize: 18,
+  },
+  errorText: {
+    color: COLORS.ERROR,
+    fontSize: 14,
+    marginTop: 4,
+  },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    color: COLORS.PRIMARY,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  loginButton: {
+    backgroundColor: COLORS.PRIMARY,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginBottom: 24,
   },
-  buttonDisabled: {
+  loginButtonDisabled: {
     opacity: 0.6,
   },
-  buttonText: {
-    color: '#ffffff',
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  loginButtonText: {
+    color: COLORS.CARD,
     fontSize: 16,
     fontWeight: '600',
+  },
+  demoSection: {
+    marginBottom: 24,
+    padding: 16,
+    backgroundColor: COLORS.CARD,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  demoTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  demoButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  demoButton: {
+    flex: 1,
+    backgroundColor: COLORS.BACKGROUND,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  demoButtonText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: COLORS.TEXT_SECONDARY,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
   },
   footerText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
-  linkText: {
-    fontSize: 14,
-    color: '#3b82f6',
-    fontWeight: '600',
-  },
-  demoContainer: {
-    marginTop: 32,
-    padding: 16,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  demoTitle: {
+  registerLink: {
     fontSize: 14,
     fontWeight: '600',
-    marginBottom: 12,
-    color: '#374151',
-  },
-  demoButton: {
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginVertical: 4,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  demoText: {
-    fontSize: 12,
-    color: '#6b7280',
+    color: COLORS.PRIMARY,
   },
 });

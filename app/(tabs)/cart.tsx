@@ -1,110 +1,177 @@
-// File: app/(tabs)/cart.tsx
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+
+// app/(tabs)/cart.tsx - Updated with real API integration
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    Image,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
+import { COLORS, DEFAULT_IMAGES, ERROR_MESSAGES } from '../constants/constants';
+import { apiService, type CartItem } from '../services/api';
 
-interface CartItem {
-  id: number;
-  productId: number;
-  name: string;
-  price: number;
-  quantity: number;
-  sellerId: number;
-  sellerName: string;
-  image: string;
-  maxQuantity: number;
+interface CartSummary {
+  total_items: number;
+  subtotal: string;
+  estimated_delivery_fee: number;
+  estimated_service_fee: string;
+  estimated_total: string;
 }
 
-const mockCartItems: CartItem[] = [
-  {
-    id: 1,
-    productId: 1,
-    name: 'Organic Apples',
-    price: 2.99,
-    quantity: 3,
-    sellerId: 1,
-    sellerName: 'John Smith',
-    image: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=300&h=200&fit=crop',
-    maxQuantity: 50,
-  },
-  {
-    id: 2,
-    productId: 2,
-    name: 'Fresh Bread',
-    price: 3.50,
-    quantity: 2,
-    sellerId: 2,
-    sellerName: 'Mary Johnson',
-    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=300&h=200&fit=crop',
-    maxQuantity: 20,
-  },
-  {
-    id: 3,
-    productId: 3,
-    name: 'Local Honey',
-    price: 8.99,
-    quantity: 1,
-    sellerId: 1,
-    sellerName: 'John Smith',
-    image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=300&h=200&fit=crop',
-    maxQuantity: 15,
-  },
-];
-
 export default function CartScreen() {
-  const [cartItems, setCartItems] = useState<CartItem[]>(mockCartItems);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [summary, setSummary] = useState<CartSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatingItems, setUpdatingItems] = useState<Set<number>>(new Set());
   const { user } = useAuth();
   const router = useRouter();
 
-  const updateQuantity = (itemId: number, newQuantity: number) => {
+  // Load cart data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCartData();
+    }, [])
+  );
+
+  const loadCartData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      const response = await apiService.getCart();
+      setCartItems(response.cart_items || []);
+      setSummary(response.summary || null);
+    } catch (error: any) {
+      console.error('Failed to load cart:', error);
+      Alert.alert('Error', error.message || ERROR_MESSAGES.NETWORK_ERROR);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const updateQuantity = async (productId: number, newQuantity: number) => {
     if (newQuantity <= 0) {
-      removeItem(itemId);
+      removeItem(productId);
       return;
     }
 
-    setCartItems(items =>
-      items.map(item => {
-        if (item.id === itemId) {
-          return { ...item, quantity: Math.min(newQuantity, item.maxQuantity) };
-        }
-        return item;
-      })
-    );
+    // Find the item to check max quantity
+    const item = cartItems.find(item => item.product_id === productId);
+    if (!item) return;
+
+    if (newQuantity > item.available_quantity) {
+      Alert.alert(
+        'Quantity Limit',
+        `Only ${item.available_quantity} items available`
+      );
+      return;
+    }
+
+    try {
+      setUpdatingItems(prev => new Set(prev).add(productId));
+      
+      await apiService.updateCartItem(productId, newQuantity);
+      
+      // Update local state
+      setCartItems(items =>
+        items.map(item =>
+          item.product_id === productId
+            ? { ...item, quantity: newQuantity }
+            : item
+        )
+      );
+
+      // Recalculate summary
+      loadCartData();
+    } catch (error: any) {
+      console.error('Failed to update cart item:', error);
+      Alert.alert('Error', error.message || 'Failed to update quantity');
+    } finally {
+      setUpdatingItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(productId);
+        return newSet;
+      });
+    }
   };
 
-  const removeItem = (itemId: number) => {
+  const removeItem = (productId: number) => {
+    const item = cartItems.find(item => item.product_id === productId);
+    if (!item) return;
+
     Alert.alert(
       'Remove Item',
-      'Are you sure you want to remove this item from your cart?',
+      `Remove "${item.name}" from your cart?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => {
-            setCartItems(items => items.filter(item => item.id !== itemId));
+          onPress: async () => {
+            try {
+              setUpdatingItems(prev => new Set(prev).add(productId));
+              
+              await apiService.removeFromCart(productId);
+              
+              // Update local state
+              setCartItems(items => items.filter(item => item.product_id !== productId));
+              
+              // Recalculate summary
+              loadCartData();
+            } catch (error: any) {
+              console.error('Failed to remove cart item:', error);
+              Alert.alert('Error', error.message || 'Failed to remove item');
+            } finally {
+              setUpdatingItems(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(productId);
+                return newSet;
+              });
+            }
           },
         },
       ]
     );
   };
 
-  const getTotalPrice = () => {
-    return cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
-  };
-
-  const getTotalItems = () => {
-    return cartItems.reduce((total, item) => total + item.quantity, 0);
+  const clearCart = () => {
+    Alert.alert(
+      'Clear Cart',
+      'Remove all items from your cart?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoading(true);
+              await apiService.clearCart();
+              setCartItems([]);
+              setSummary(null);
+            } catch (error: any) {
+              console.error('Failed to clear cart:', error);
+              Alert.alert('Error', error.message || 'Failed to clear cart');
+            } finally {
+              setLoading(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleCheckout = () => {
@@ -119,53 +186,78 @@ export default function CartScreen() {
     router.push('/(tabs)' as any);
   };
 
-  const CartItemComponent = ({ item }: { item: CartItem }) => (
-    <View style={styles.cartItem}>
-      <Image source={{ uri: item.image }} style={styles.itemImage} />
-      
-      <View style={styles.itemDetails}>
-        <Text style={styles.itemName}>{item.name}</Text>
-        <Text style={styles.sellerName}>by {item.sellerName}</Text>
-        <Text style={styles.itemPrice}>${item.price.toFixed(2)} each</Text>
+  const CartItemComponent = ({ item }: { item: CartItem }) => {
+    const isUpdating = updatingItems.has(item.product_id);
+    
+    return (
+      <View style={[styles.cartItem, isUpdating && styles.cartItemUpdating]}>
+        <Image 
+          source={{ uri: item.image_url || DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }} 
+          style={styles.itemImage}
+          defaultSource={{ uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+        />
         
-        <View style={styles.quantityContainer}>
-          <TouchableOpacity
-            style={styles.quantityButton}
-            onPress={() => updateQuantity(item.id, item.quantity - 1)}
-          >
-            <Text style={styles.quantityButtonText}>−</Text>
-          </TouchableOpacity>
+        <View style={styles.itemDetails}>
+          <Text style={styles.itemName} numberOfLines={2}>{item.name}</Text>
+          {item.seller_name && (
+            <Text style={styles.sellerName}>by {item.seller_name}</Text>
+          )}
+          {item.shop_name && (
+            <Text style={styles.shopName}>{item.shop_name}</Text>
+          )}
+          <Text style={styles.itemPrice}>${item.price.toFixed(2)} each</Text>
           
-          <Text style={styles.quantityText}>{item.quantity}</Text>
+          <View style={styles.quantityContainer}>
+            <TouchableOpacity
+              style={[styles.quantityButton, isUpdating && styles.quantityButtonDisabled]}
+              onPress={() => updateQuantity(item.product_id, item.quantity - 1)}
+              disabled={isUpdating}
+            >
+              <Text style={styles.quantityButtonText}>−</Text>
+            </TouchableOpacity>
+            
+            <View style={styles.quantityTextContainer}>
+              {isUpdating ? (
+                <ActivityIndicator size="small" color={COLORS.PRIMARY} />
+              ) : (
+                <Text style={styles.quantityText}>{item.quantity}</Text>
+              )}
+            </View>
+            
+            <TouchableOpacity
+              style={[
+                styles.quantityButton,
+                (item.quantity >= item.available_quantity || isUpdating) && styles.quantityButtonDisabled
+              ]}
+              onPress={() => updateQuantity(item.product_id, item.quantity + 1)}
+              disabled={item.quantity >= item.available_quantity || isUpdating}
+            >
+              <Text style={styles.quantityButtonText}>+</Text>
+            </TouchableOpacity>
+          </View>
           
+          {item.quantity >= item.available_quantity && (
+            <Text style={styles.maxQuantityText}>Maximum quantity reached</Text>
+          )}
+        </View>
+
+        <View style={styles.itemActions}>
+          <Text style={styles.itemTotal}>
+            ${(item.price * item.quantity).toFixed(2)}
+          </Text>
           <TouchableOpacity
-            style={[
-              styles.quantityButton,
-              item.quantity >= item.maxQuantity && styles.quantityButtonDisabled
-            ]}
-            onPress={() => updateQuantity(item.id, item.quantity + 1)}
-            disabled={item.quantity >= item.maxQuantity}
+            style={[styles.removeButton, isUpdating && styles.removeButtonDisabled]}
+            onPress={() => removeItem(item.product_id)}
+            disabled={isUpdating}
           >
-            <Text style={styles.quantityButtonText}>+</Text>
+            <Text style={styles.removeButtonText}>🗑️</Text>
           </TouchableOpacity>
         </View>
       </View>
+    );
+  };
 
-      <View style={styles.itemActions}>
-        <Text style={styles.itemTotal}>
-          ${(item.price * item.quantity).toFixed(2)}
-        </Text>
-        <TouchableOpacity
-          style={styles.removeButton}
-          onPress={() => removeItem(item.id)}
-        >
-          <Text style={styles.removeButtonText}>🗑️</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  if (user?.type !== 'buyer') {
+  if (user?.user_type !== 'buyer') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
@@ -179,10 +271,21 @@ export default function CartScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Shopping Cart</Text>
-        <Text style={styles.itemCount}>{getTotalItems()} items</Text>
+        <View style={styles.headerActions}>
+          {cartItems.length > 0 && (
+            <TouchableOpacity onPress={clearCart} style={styles.clearButton}>
+              <Text style={styles.clearButtonText}>Clear All</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {cartItems.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.PRIMARY} />
+          <Text style={styles.loadingText}>Loading cart...</Text>
+        </View>
+      ) : cartItems.length === 0 ? (
         <View style={styles.emptyCart}>
           <Text style={styles.emptyCartIcon}>🛒</Text>
           <Text style={styles.emptyCartTitle}>Your cart is empty</Text>
@@ -200,34 +303,58 @@ export default function CartScreen() {
         <>
           <FlatList
             data={cartItems}
-            keyExtractor={(item) => item.id.toString()}
+            keyExtractor={(item) => item.product_id.toString()}
             renderItem={({ item }) => <CartItemComponent item={item} />}
             contentContainerStyle={styles.cartList}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => loadCartData(true)}
+                colors={[COLORS.PRIMARY]}
+                tintColor={COLORS.PRIMARY}
+              />
+            }
           />
 
-          <View style={styles.footer}>
-            <View style={styles.totalContainer}>
-              <Text style={styles.totalLabel}>Total ({getTotalItems()} items)</Text>
-              <Text style={styles.totalAmount}>${getTotalPrice().toFixed(2)}</Text>
-            </View>
+          {summary && (
+            <View style={styles.footer}>
+              <View style={styles.summaryContainer}>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Subtotal ({summary.total_items} items)</Text>
+                  <Text style={styles.summaryValue}>${summary.subtotal}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Delivery Fee</Text>
+                  <Text style={styles.summaryValue}>${summary.estimated_delivery_fee.toFixed(2)}</Text>
+                </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Service Fee</Text>
+                  <Text style={styles.summaryValue}>${summary.estimated_service_fee}</Text>
+                </View>
+                <View style={[styles.summaryRow, styles.totalRow]}>
+                  <Text style={styles.totalLabel}>Total</Text>
+                  <Text style={styles.totalAmount}>${summary.estimated_total}</Text>
+                </View>
+              </View>
 
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={styles.continueButton}
-                onPress={handleContinueShopping}
-              >
-                <Text style={styles.continueButtonText}>Continue Shopping</Text>
-              </TouchableOpacity>
+              <View style={styles.actionButtons}>
+                <TouchableOpacity
+                  style={styles.continueButton}
+                  onPress={handleContinueShopping}
+                >
+                  <Text style={styles.continueButtonText}>Continue Shopping</Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.checkoutButton}
-                onPress={handleCheckout}
-              >
-                <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.checkoutButton}
+                  onPress={handleCheckout}
+                >
+                  <Text style={styles.checkoutButtonText}>Proceed to Checkout</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          )}
         </>
       )}
     </SafeAreaView>
@@ -237,14 +364,14 @@ export default function CartScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: COLORS.BACKGROUND,
   },
   header: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.BORDER,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -252,17 +379,38 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
-  itemCount: {
-    fontSize: 14,
-    color: '#6b7280',
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  clearButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: COLORS.ERROR,
+  },
+  clearButtonText: {
+    color: COLORS.CARD,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.TEXT_SECONDARY,
   },
   cartList: {
     padding: 16,
   },
   cartItem: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
@@ -273,11 +421,15 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 3,
   },
+  cartItemUpdating: {
+    opacity: 0.7,
+  },
   itemImage: {
     width: 80,
     height: 80,
     borderRadius: 8,
     marginRight: 12,
+    backgroundColor: COLORS.BORDER,
   },
   itemDetails: {
     flex: 1,
@@ -286,17 +438,22 @@ const styles = StyleSheet.create({
   itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
     marginBottom: 4,
   },
   sellerName: {
     fontSize: 12,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
+    marginBottom: 2,
+  },
+  shopName: {
+    fontSize: 11,
+    color: COLORS.TEXT_MUTED,
     marginBottom: 4,
   },
   itemPrice: {
     fontSize: 14,
-    color: '#3b82f6',
+    color: COLORS.PRIMARY,
     fontWeight: '500',
     marginBottom: 8,
   },
@@ -309,11 +466,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: COLORS.BACKGROUND,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: COLORS.BORDER,
   },
   quantityButtonDisabled: {
     opacity: 0.5,
@@ -321,15 +478,23 @@ const styles = StyleSheet.create({
   quantityButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#374151',
+    color: COLORS.TEXT_PRIMARY,
+  },
+  quantityTextContainer: {
+    marginHorizontal: 16,
+    minWidth: 30,
+    alignItems: 'center',
   },
   quantityText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
-    marginHorizontal: 16,
-    minWidth: 30,
+    color: COLORS.TEXT_PRIMARY,
     textAlign: 'center',
+  },
+  maxQuantityText: {
+    fontSize: 10,
+    color: COLORS.WARNING,
+    marginTop: 4,
   },
   itemActions: {
     alignItems: 'flex-end',
@@ -339,51 +504,75 @@ const styles = StyleSheet.create({
   itemTotal: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   removeButton: {
     padding: 8,
+  },
+  removeButtonDisabled: {
+    opacity: 0.5,
   },
   removeButtonText: {
     fontSize: 18,
   },
   footer: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: COLORS.BORDER,
     padding: 20,
   },
-  totalContainer: {
+  summaryContainer: {
+    marginBottom: 16,
+  },
+  summaryRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.TEXT_PRIMARY,
+  },
+  totalRow: {
+    borderTopWidth: 1,
+    borderTopColor: COLORS.BORDER,
+    paddingTop: 8,
+    marginTop: 8,
   },
   totalLabel: {
     fontSize: 16,
-    color: '#6b7280',
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
   },
   totalAmount: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   actionButtons: {
     gap: 12,
   },
   continueButton: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: COLORS.BACKGROUND,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
   },
   continueButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: COLORS.TEXT_PRIMARY,
   },
   checkoutButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -391,7 +580,7 @@ const styles = StyleSheet.create({
   checkoutButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: COLORS.CARD,
   },
   emptyCart: {
     flex: 1,
@@ -406,19 +595,19 @@ const styles = StyleSheet.create({
   emptyCartTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
     marginBottom: 8,
     textAlign: 'center',
   },
   emptyCartSubtitle: {
     fontSize: 16,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 22,
   },
   shopButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
@@ -426,7 +615,7 @@ const styles = StyleSheet.create({
   shopButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: COLORS.CARD,
   },
   errorContainer: {
     flex: 1,
@@ -436,7 +625,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
   },
 });

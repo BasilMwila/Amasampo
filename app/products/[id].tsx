@@ -1,149 +1,197 @@
+/* eslint-disable react-hooks/exhaustive-deps */
+// app/products/[id].tsx - Product detail screen with real API integration
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Image,
-    SafeAreaView,
-    ScrollView,
-    Share,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Image,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
+import { COLORS, DEFAULT_IMAGES, ERROR_MESSAGES } from '../constants/constants';
+import { apiService, type Product } from '../services/api';
 
-interface Product {
+interface Review {
   id: number;
-  name: string;
-  price: number;
-  quantity: number;
-  sellerId: number;
-  sellerName: string;
-  shopName?: string;
-  category: string;
-  image: string;
-  description: string;
-  createdAt: string;
+  user_name: string;
+  rating: number;
+  title: string;
+  comment: string;
+  created_at: string;
 }
 
-const mockProducts: Product[] = [
-  {
-    id: 1,
-    name: 'Organic Apples',
-    price: 2.99,
-    quantity: 50,
-    sellerId: 1,
-    sellerName: 'John Smith',
-    shopName: 'Smith Farm Market',
-    category: 'Fruits',
-    image: 'https://images.unsplash.com/photo-1560806887-1e4cd0b6cbd6?w=400&h=300&fit=crop',
-    description: 'Fresh organic apples directly from our farm. These crisp, sweet apples are perfect for snacking, baking, or making fresh juice. Grown without pesticides using sustainable farming practices. Each apple is hand-picked at peak ripeness to ensure the best quality and flavor.',
-    createdAt: '2024-01-15T10:30:00Z'
-  },
-  {
-    id: 2,
-    name: 'Fresh Bread',
-    price: 3.50,
-    quantity: 20,
-    sellerId: 2,
-    sellerName: 'Mary Johnson',
-    shopName: "Mary's Bakery",
-    category: 'Bakery',
-    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=400&h=300&fit=crop',
-    description: 'Artisan sourdough bread baked fresh daily using traditional methods. Made with organic flour, natural sourdough starter, and a touch of sea salt. Perfect for sandwiches, toast, or enjoyed on its own with butter.',
-    createdAt: '2024-01-14T08:00:00Z'
-  },
-  {
-    id: 3,
-    name: 'Local Honey',
-    price: 8.99,
-    quantity: 15,
-    sellerId: 1,
-    sellerName: 'John Smith',
-    shopName: 'Smith Farm Market',
-    category: 'Pantry',
-    image: 'https://images.unsplash.com/photo-1587049352846-4a222e784d38?w=400&h=300&fit=crop',
-    description: 'Pure, unfiltered honey harvested from our local beehives. This golden honey has a rich, complex flavor that reflects the diverse wildflowers in our area. Great for tea, baking, or drizzling over yogurt and toast.',
-    createdAt: '2024-01-13T15:45:00Z'
-  },
-];
-
-export default function ProductDetails() {
-  const { id } = useLocalSearchParams();
+export default function ProductDetailScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [product, setProduct] = useState<Product | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
+  const [cartQuantity, setCartQuantity] = useState(1);
   const { user } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    // Find product by ID
-    const foundProduct = mockProducts.find(p => p.id === parseInt(id as string));
-    setProduct(foundProduct || null);
+    if (id) {
+      loadProductData();
+    }
   }, [id]);
 
-  const handleMessageSeller = () => {
-    if (product) {
-      router.push(`/chat/${product.sellerId}` as any);
-    }
-  };
-
-  const handleShare = async () => {
-    if (product) {
-      try {
-        await Share.share({
-          message: `Check out this ${product.name} for $${product.price} on Marketplace!`,
-          title: product.name,
-        });
-      } catch (error) {
-        console.error('Error sharing:', error);
+  const loadProductData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
       }
+
+      const [productResponse, reviewsResponse] = await Promise.all([
+        apiService.getProduct(parseInt(id!)),
+        apiService.getProductReviews(parseInt(id!), 1),
+      ]);
+
+      setProduct(productResponse.product);
+      setReviews(reviewsResponse.reviews || []);
+    } catch (error: any) {
+      console.error('Failed to load product:', error);
+      Alert.alert('Error', error.message || ERROR_MESSAGES.NETWORK_ERROR);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const handleAddToCart = () => {
-    Alert.alert(
-      'Add to Cart',
-      `Add ${quantity} ${product?.name} to your cart?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Add to Cart', 
-          onPress: () => {
-            Alert.alert('Success', 'Item added to cart!');
+  const handleAddToCart = async () => {
+    if (!product || !user) return;
+
+    if (user.user_type !== 'buyer') {
+      Alert.alert('Access Denied', 'Only buyers can add items to cart');
+      return;
+    }
+
+    if (product.seller_id === user.id) {
+      Alert.alert('Invalid Action', 'You cannot add your own product to cart');
+      return;
+    }
+
+    if (product.quantity < cartQuantity) {
+      Alert.alert('Insufficient Stock', `Only ${product.quantity} items available`);
+      return;
+    }
+
+    try {
+      setAddingToCart(true);
+      await apiService.addToCart(product.id, cartQuantity);
+      
+      Alert.alert(
+        'Success!',
+        `${cartQuantity} ${product.name}${cartQuantity > 1 ? 's' : ''} added to cart`,
+        [
+          { text: 'Continue Shopping', style: 'cancel' },
+          { 
+            text: 'View Cart', 
+            onPress: () => router.push('/(tabs)/cart' as any)
           }
-        },
-      ]
-    );
+        ]
+      );
+    } catch (error: any) {
+      console.error('Failed to add to cart:', error);
+      Alert.alert('Error', error.message || 'Failed to add item to cart');
+    } finally {
+      setAddingToCart(false);
+    }
+  };
+
+  const handleMessageSeller = () => {
+    if (!product || !user) return;
+
+    if (product.seller_id === user.id) {
+      Alert.alert('Invalid Action', 'You cannot message yourself');
+      return;
+    }
+
+    router.push(`/chat/${product.seller_id}` as any);
   };
 
   const handleBuyNow = () => {
-    Alert.alert(
-      'Buy Now',
-      `Purchase ${quantity} ${product?.name} for $${((product?.price || 0) * quantity).toFixed(2)}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Buy Now', 
-          onPress: () => {
-            Alert.alert('Success', 'Purchase initiated! You will be redirected to payment.');
-          }
-        },
-      ]
+    if (!product || !user) return;
+
+    if (user.user_type !== 'buyer') {
+      Alert.alert('Access Denied', 'Only buyers can purchase items');
+      return;
+    }
+
+    if (product.seller_id === user.id) {
+      Alert.alert('Invalid Action', 'You cannot buy your own product');
+      return;
+    }
+
+    // Add to cart and go to checkout
+    handleAddToCart().then(() => {
+      router.push('/checkout' as any);
+    });
+  };
+
+  const updateCartQuantity = (change: number) => {
+    const newQuantity = cartQuantity + change;
+    if (newQuantity >= 1 && newQuantity <= (product?.quantity || 0)) {
+      setCartQuantity(newQuantity);
+    }
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const renderStars = (rating: number) => {
+    const stars = [];
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 !== 0;
+
+    for (let i = 0; i < fullStars; i++) {
+      stars.push('⭐');
+    }
+    if (hasHalfStar) {
+      stars.push('⭐');
+    }
+    for (let i = stars.length; i < 5; i++) {
+      stars.push('☆');
+    }
+
+    return stars.join('');
+  };
+
+  const ReviewItem = ({ review }: { review: Review }) => (
+    <View style={styles.reviewItem}>
+      <View style={styles.reviewHeader}>
+        <Text style={styles.reviewerName}>{review.user_name}</Text>
+        <Text style={styles.reviewDate}>{formatDate(review.created_at)}</Text>
+      </View>
+      <View style={styles.reviewRating}>
+        <Text style={styles.reviewStars}>{renderStars(review.rating)}</Text>
+        <Text style={styles.reviewTitle}>{review.title}</Text>
+      </View>
+      <Text style={styles.reviewComment}>{review.comment}</Text>
+    </View>
+  );
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.PRIMARY} />
+          <Text style={styles.loadingText}>Loading product...</Text>
+        </View>
+      </SafeAreaView>
     );
-  };
-
-  const increaseQuantity = () => {
-    if (product && quantity < product.quantity) {
-      setQuantity(quantity + 1);
-    }
-  };
-
-  const decreaseQuantity = () => {
-    if (quantity > 1) {
-      setQuantity(quantity - 1);
-    }
-  };
+  }
 
   if (!product) {
     return (
@@ -161,102 +209,160 @@ export default function ProductDetails() {
     );
   }
 
-  const isOwnProduct = user?.id === product.sellerId;
-  const totalPrice = product.price * quantity;
+  const isOwnProduct = user?.id === product.seller_id;
+  const canPurchase = user?.user_type === 'buyer' && !isOwnProduct;
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadProductData(true)}
+            colors={[COLORS.PRIMARY]}
+            tintColor={COLORS.PRIMARY}
+          />
+        }
+      >
+        {/* Product Image */}
         <View style={styles.imageContainer}>
-          <Image source={{ uri: product.image }} style={styles.productImage} />
-          <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-            <Text style={styles.shareButtonText}>📤</Text>
-          </TouchableOpacity>
+          <Image
+            source={{ uri: product.image_url || DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+            style={styles.productImage}
+            defaultSource={{ uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+          />
+          {product.quantity === 0 && (
+            <View style={styles.outOfStockOverlay}>
+              <Text style={styles.outOfStockText}>Out of Stock</Text>
+            </View>
+          )}
         </View>
 
-        <View style={styles.productInfo}>
-          <View style={styles.header}>
+        <View style={styles.content}>
+          {/* Product Info */}
+          <View style={styles.productInfo}>
             <Text style={styles.productName}>{product.name}</Text>
-            <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
-          </View>
-
-          <View style={styles.availability}>
-            <Text style={styles.availabilityText}>
-              {product.quantity > 0 ? `${product.quantity} available` : 'Out of stock'}
-            </Text>
-            <View style={styles.categoryBadge}>
-              <Text style={styles.categoryText}>{product.category}</Text>
+            
+            <View style={styles.priceRow}>
+              <Text style={styles.productPrice}>${product.price?.toFixed(2)}</Text>
+              <Text style={styles.productQuantity}>
+                {product.quantity > 0 ? `${product.quantity} available` : 'Out of stock'}
+              </Text>
             </View>
-          </View>
 
-          <View style={styles.sellerInfo}>
-            <View style={styles.sellerDetails}>
-              <Text style={styles.sellerLabel}>Sold by</Text>
-              <Text style={styles.sellerName}>{product.sellerName}</Text>
-              {product.shopName && (
-                <Text style={styles.shopName}>🏪 {product.shopName}</Text>
-              )}
-            </View>
-            {!isOwnProduct && user?.type === 'buyer' && (
-              <TouchableOpacity style={styles.messageButton} onPress={handleMessageSeller}>
-                <Text style={styles.messageButtonText}>💬 Message</Text>
-              </TouchableOpacity>
+            {product.rating && product.rating > 0 && (
+              <View style={styles.ratingRow}>
+                <Text style={styles.ratingStars}>{renderStars(product.rating)}</Text>
+                <Text style={styles.ratingText}>
+                  {product.rating.toFixed(1)} ({product.review_count || 0} reviews)
+                </Text>
+              </View>
             )}
           </View>
 
-          <View style={styles.descriptionContainer}>
-            <Text style={styles.descriptionTitle}>Description</Text>
+          {/* Seller Info */}
+          <View style={styles.sellerInfo}>
+            <Text style={styles.sellerLabel}>Sold by</Text>
+            <View style={styles.sellerRow}>
+              <View style={styles.sellerDetails}>
+                <Text style={styles.sellerName}>{product.seller_name}</Text>
+                {product.shop_name && (
+                  <Text style={styles.shopName}>{product.shop_name}</Text>
+                )}
+              </View>
+              {!isOwnProduct && (
+                <TouchableOpacity
+                  style={styles.messageSellerButton}
+                  onPress={handleMessageSeller}
+                >
+                  <Text style={styles.messageSellerText}>Message</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* Quantity Selector for Buyers */}
+          {canPurchase && product.quantity > 0 && (
+            <View style={styles.quantitySection}>
+              <Text style={styles.quantityLabel}>Quantity</Text>
+              <View style={styles.quantitySelector}>
+                <TouchableOpacity
+                  style={[styles.quantityButton, cartQuantity <= 1 && styles.quantityButtonDisabled]}
+                  onPress={() => updateCartQuantity(-1)}
+                  disabled={cartQuantity <= 1}
+                >
+                  <Text style={styles.quantityButtonText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.quantityText}>{cartQuantity}</Text>
+                <TouchableOpacity
+                  style={[styles.quantityButton, cartQuantity >= product.quantity && styles.quantityButtonDisabled]}
+                  onPress={() => updateCartQuantity(1)}
+                  disabled={cartQuantity >= product.quantity}
+                >
+                  <Text style={styles.quantityButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Description */}
+          <View style={styles.descriptionSection}>
+            <Text style={styles.sectionTitle}>Description</Text>
             <Text style={styles.description}>{product.description}</Text>
           </View>
 
-          {!isOwnProduct && user?.type === 'buyer' && product.quantity > 0 && (
-            <View style={styles.purchaseSection}>
-              <View style={styles.quantityContainer}>
-                <Text style={styles.quantityLabel}>Quantity:</Text>
-                <View style={styles.quantityControls}>
-                  <TouchableOpacity 
-                    style={[styles.quantityButton, quantity <= 1 && styles.quantityButtonDisabled]}
-                    onPress={decreaseQuantity}
-                    disabled={quantity <= 1}
-                  >
-                    <Text style={styles.quantityButtonText}>−</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.quantityValue}>{quantity}</Text>
-                  <TouchableOpacity 
-                    style={[styles.quantityButton, quantity >= product.quantity && styles.quantityButtonDisabled]}
-                    onPress={increaseQuantity}
-                    disabled={quantity >= product.quantity}
-                  >
-                    <Text style={styles.quantityButtonText}>+</Text>
-                  </TouchableOpacity>
-                </View>
+          {/* Reviews */}
+          {reviews.length > 0 && (
+            <View style={styles.reviewsSection}>
+              <View style={styles.reviewsHeader}>
+                <Text style={styles.sectionTitle}>Reviews ({reviews.length})</Text>
+                <TouchableOpacity>
+                  <Text style={styles.seeAllText}>See All</Text>
+                </TouchableOpacity>
               </View>
-
-              <View style={styles.totalContainer}>
-                <Text style={styles.totalLabel}>Total:</Text>
-                <Text style={styles.totalPrice}>${totalPrice.toFixed(2)}</Text>
-              </View>
+              {reviews.slice(0, 3).map((review) => (
+                <ReviewItem key={review.id} review={review} />
+              ))}
             </View>
           )}
         </View>
       </ScrollView>
 
-      {!isOwnProduct && user?.type === 'buyer' && product.quantity > 0 && (
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.addToCartButton} onPress={handleAddToCart}>
-            <Text style={styles.addToCartText}>Add to Cart</Text>
+      {/* Action Buttons */}
+      {canPurchase && (
+        <View style={styles.actionButtons}>
+          <TouchableOpacity
+            style={[styles.addToCartButton, (addingToCart || product.quantity === 0) && styles.buttonDisabled]}
+            onPress={handleAddToCart}
+            disabled={addingToCart || product.quantity === 0}
+          >
+            {addingToCart ? (
+              <ActivityIndicator size="small" color={COLORS.CARD} />
+            ) : (
+              <Text style={styles.addToCartText}>Add to Cart</Text>
+            )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.buyNowButton} onPress={handleBuyNow}>
+
+          <TouchableOpacity
+            style={[styles.buyNowButton, product.quantity === 0 && styles.buttonDisabled]}
+            onPress={handleBuyNow}
+            disabled={product.quantity === 0}
+          >
             <Text style={styles.buyNowText}>Buy Now</Text>
           </TouchableOpacity>
         </View>
       )}
 
       {isOwnProduct && (
-        <View style={styles.footer}>
-          <View style={styles.ownProductNotice}>
-            <Text style={styles.ownProductText}>This is your product</Text>
-          </View>
+        <View style={styles.ownProductActions}>
+          <TouchableOpacity
+            style={styles.editProductButton}
+            onPress={() => router.push(`/products/edit/${product.id}` as any)}
+          >
+            <Text style={styles.editProductText}>Edit Product</Text>
+          </TouchableOpacity>
         </View>
       )}
     </SafeAreaView>
@@ -266,234 +372,17 @@ export default function ProductDetails() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: COLORS.BACKGROUND,
   },
-  content: {
-    paddingBottom: 100,
-  },
-  imageContainer: {
-    position: 'relative',
-  },
-  productImage: {
-    width: '100%',
-    height: 300,
-    resizeMode: 'cover',
-  },
-  shareButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    alignItems: 'center',
+  loadingContainer: {
+    flex: 1,
     justifyContent: 'center',
-  },
-  shareButtonText: {
-    fontSize: 18,
-  },
-  productInfo: {
-    backgroundColor: '#ffffff',
-    marginTop: -20,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    minHeight: 400,
-  },
-  header: {
-    marginBottom: 16,
-  },
-  productName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#1a1a1a',
-    marginBottom: 8,
-  },
-  productPrice: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  availability: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
   },
-  availabilityText: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  categoryBadge: {
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  sellerInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  sellerDetails: {
-    flex: 1,
-  },
-  sellerLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 4,
-  },
-  sellerName: {
+  loadingText: {
+    marginTop: 16,
     fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 2,
-  },
-  shopName: {
-    fontSize: 14,
-    color: '#3b82f6',
-  },
-  messageButton: {
-    backgroundColor: '#3b82f6',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  messageButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  descriptionContainer: {
-    marginBottom: 24,
-  },
-  descriptionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: '#4b5563',
-  },
-  purchaseSection: {
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    paddingTop: 20,
-  },
-  quantityContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  quantityLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  quantityControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  quantityButton: {
-    backgroundColor: '#3b82f6',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quantityButtonDisabled: {
-    backgroundColor: '#d1d5db',
-  },
-  quantityButtonText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  quantityValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-    minWidth: 30,
-    textAlign: 'center',
-  },
-  totalContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#1a1a1a',
-  },
-  totalPrice: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#3b82f6',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    padding: 20,
-    flexDirection: 'row',
-    gap: 12,
-  },
-  addToCartButton: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  addToCartText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  buyNowButton: {
-    flex: 1,
-    backgroundColor: '#3b82f6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  buyNowText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  ownProductNotice: {
-    flex: 1,
-    backgroundColor: '#f3f4f6',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  ownProductText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
   errorContainer: {
     flex: 1,
@@ -503,17 +392,291 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
+    textAlign: 'center',
     marginBottom: 20,
   },
   backButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
   },
   backButtonText: {
-    color: '#ffffff',
+    color: COLORS.CARD,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  imageContainer: {
+    position: 'relative',
+    height: 300,
+    backgroundColor: COLORS.CARD,
+  },
+  productImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  outOfStockOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  outOfStockText: {
+    color: COLORS.CARD,
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  content: {
+    padding: 20,
+  },
+  productInfo: {
+    marginBottom: 24,
+  },
+  productName: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 12,
+    lineHeight: 32,
+  },
+  priceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  productPrice: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: COLORS.PRIMARY,
+  },
+  productQuantity: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  ratingStars: {
+    fontSize: 16,
+  },
+  ratingText: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
+  },
+  sellerInfo: {
+    backgroundColor: COLORS.CARD,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+  },
+  sellerLabel: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
+    marginBottom: 8,
+  },
+  sellerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sellerDetails: {
+    flex: 1,
+  },
+  sellerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+  },
+  shopName: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
+    marginTop: 2,
+  },
+  messageSellerButton: {
+    backgroundColor: COLORS.PRIMARY,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  messageSellerText: {
+    color: COLORS.CARD,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  quantitySection: {
+    marginBottom: 24,
+  },
+  quantityLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 12,
+  },
+  quantitySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+  },
+  quantityButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.CARD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  quantityButtonDisabled: {
+    opacity: 0.5,
+  },
+  quantityButtonText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.TEXT_PRIMARY,
+  },
+  quantityText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  descriptionSection: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 12,
+  },
+  description: {
+    fontSize: 16,
+    color: COLORS.TEXT_SECONDARY,
+    lineHeight: 24,
+  },
+  reviewsSection: {
+    marginBottom: 24,
+  },
+  reviewsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  seeAllText: {
+    fontSize: 14,
+    color: COLORS.PRIMARY,
+    fontWeight: '600',
+  },
+  reviewItem: {
+    backgroundColor: COLORS.CARD,
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  reviewerName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+  },
+  reviewDate: {
+    fontSize: 12,
+    color: COLORS.TEXT_MUTED,
+  },
+  reviewRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  reviewStars: {
+    fontSize: 14,
+  },
+  reviewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+  },
+  reviewComment: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
+    lineHeight: 20,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    padding: 20,
+    paddingTop: 16,
+    backgroundColor: COLORS.CARD,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.BORDER,
+    gap: 12,
+  },
+  addToCartButton: {
+    flex: 1,
+    backgroundColor: COLORS.BACKGROUND,
+    borderWidth: 1,
+    borderColor: COLORS.PRIMARY,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addToCartText: {
+    color: COLORS.PRIMARY,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  buyNowButton: {
+    flex: 1,
+    backgroundColor: COLORS.PRIMARY,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buyNowText: {
+    color: COLORS.CARD,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  ownProductActions: {
+    padding: 20,
+    paddingTop: 16,
+    backgroundColor: COLORS.CARD,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.BORDER,
+  },
+  editProductButton: {
+    backgroundColor: COLORS.PRIMARY,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  editProductText: {
+    color: COLORS.CARD,
     fontSize: 16,
     fontWeight: '600',
   },

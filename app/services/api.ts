@@ -1,100 +1,218 @@
-// app/services/api.ts
-const API_BASE_URL = 'http://localhost:3000/api';
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// app/services/api.ts - API service for backend integration
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Backend URL - Update this to your actual backend URL
+const API_BASE_URL = 'http://localhost:3000/api'; // Change to your backend URL
+
+interface ApiResponse<T = any> {
+  data?: T;
+  message?: string;
+  error?: string;
+  code?: string;
+}
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  phone?: string;
+  user_type: 'buyer' | 'seller';
+  shop_name?: string;
+  avatar_url?: string;
+  is_verified: boolean;
+}
+
+interface Product {
+  id: number;
+  name: string;
+  description: string;
+  price: number;
+  quantity: number;
+  category_id: number;
+  category_name?: string;
+  seller_id: number;
+  seller_name?: string;
+  shop_name?: string;
+  image_url?: string;
+  rating?: number;
+  review_count?: number;
+  is_featured?: boolean;
+  is_active?: boolean;
+}
+
+interface CartItem {
+  id: number;
+  product_id: number;
+  name: string;
+  price: number;
+  quantity: number;
+  image_url?: string;
+  seller_name?: string;
+  shop_name?: string;
+  available_quantity: number;
+}
+
+interface Order {
+  id: number;
+  order_number: string;
+  status: string;
+  total: number;
+  created_at: string;
+  items: any[];
+}
 
 class ApiService {
-  private async makeRequest(endpoint: string, options: RequestInit = {}) {
-    const url = `${API_BASE_URL}${endpoint}`;
-    
-    const defaultHeaders = {
-      'Content-Type': 'application/json',
-    };
+  private baseURL: string;
+
+  constructor() {
+    this.baseURL = API_BASE_URL;
+  }
+
+  // Helper method to get auth token
+  private async getAuthToken(): Promise<string | null> {
+    try {
+      return await AsyncStorage.getItem('auth_token');
+    } catch (error) {
+      console.error('Error getting auth token:', error);
+      return null;
+    }
+  }
+
+  // Helper method to make HTTP requests
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const url = `${this.baseURL}${endpoint}`;
+    const token = await this.getAuthToken();
 
     const config: RequestInit = {
-      ...options,
       headers: {
-        ...defaultHeaders,
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
         ...options.headers,
       },
+      ...options,
     };
 
     try {
       const response = await fetch(url, config);
-      
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(data.error || `HTTP error! status: ${response.status}`);
       }
-      
-      return await response.json();
+
+      return data;
     } catch (error) {
       console.error('API request failed:', error);
       throw error;
     }
   }
 
-  // Auth endpoints
-  async login(email: string, password: string) {
-    return this.makeRequest('/auth/login', {
+  // Authentication APIs
+  async login(email: string, password: string): Promise<{ user: User; tokens: any }> {
+    const response = await this.request<{ user: User; tokens: any }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     });
+
+    // Store token
+    if (response.tokens?.access_token) {
+      await AsyncStorage.setItem('auth_token', response.tokens.access_token);
+      await AsyncStorage.setItem('refresh_token', response.tokens.refresh_token);
+    }
+
+    return response;
   }
 
   async register(userData: {
     name: string;
     email: string;
     password: string;
-    type: 'buyer' | 'seller';
-    shopName?: string;
-  }) {
-    return this.makeRequest('/auth/register', {
+    phone?: string;
+    user_type: 'buyer' | 'seller';
+    shop_name?: string;
+  }): Promise<{ user: User; tokens: any }> {
+    const response = await this.request<{ user: User; tokens: any }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(userData),
     });
-  }
 
-  async logout() {
-    return this.makeRequest('/auth/logout', {
-      method: 'POST',
-    });
-  }
-
-  // User endpoints
-  async getProfile() {
-    return this.makeRequest('/users/profile');
-  }
-
-  async updateProfile(userData: any) {
-    return this.makeRequest('/users/profile', {
-      method: 'PUT',
-      body: JSON.stringify(userData),
-    });
-  }
-
-  // Product endpoints
-  async getProducts(filters?: {
-    category?: string;
-    search?: string;
-    minPrice?: number;
-    maxPrice?: number;
-    sellerId?: number;
-  }) {
-    const params = new URLSearchParams();
-    if (filters) {
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
+    // Store token
+    if (response.tokens?.access_token) {
+      await AsyncStorage.setItem('auth_token', response.tokens.access_token);
+      await AsyncStorage.setItem('refresh_token', response.tokens.refresh_token);
     }
-    
-    const queryString = params.toString();
-    const endpoint = queryString ? `/products?${queryString}` : '/products';
-    
-    return this.makeRequest(endpoint);
+
+    return response;
   }
 
-  async getProduct(id: number) {
-    return this.makeRequest(`/products/${id}`);
+  async getCurrentUser(): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/auth/me');
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await this.request('/auth/logout', { method: 'POST' });
+    } catch (error) {
+      // Ignore logout errors
+    } finally {
+      // Clear stored tokens
+      await AsyncStorage.multiRemove(['auth_token', 'refresh_token']);
+    }
+  }
+
+  async refreshToken(): Promise<{ tokens: any }> {
+    const refreshToken = await AsyncStorage.getItem('refresh_token');
+    
+    if (!refreshToken) {
+      throw new Error('No refresh token available');
+    }
+
+    const response = await this.request<{ tokens: any }>('/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    // Update stored tokens
+    if (response.tokens?.access_token) {
+      await AsyncStorage.setItem('auth_token', response.tokens.access_token);
+      await AsyncStorage.setItem('refresh_token', response.tokens.refresh_token);
+    }
+
+    return response;
+  }
+
+  // Product APIs
+  async getProducts(filters: {
+    search?: string;
+    category_id?: number;
+    seller_id?: number;
+    is_featured?: boolean;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ products: Product[]; pagination?: any }> {
+    const queryParams = new URLSearchParams();
+    
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, value.toString());
+      }
+    });
+
+    const endpoint = `/products${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+    return this.request<{ products: Product[]; pagination?: any }>(endpoint);
+  }
+
+  async getFeaturedProducts(): Promise<{ products: Product[] }> {
+    return this.request<{ products: Product[] }>('/products/featured');
+  }
+
+  async getProduct(id: number): Promise<{ product: Product; recent_reviews?: any[] }> {
+    return this.request<{ product: Product; recent_reviews?: any[] }>(`/products/${id}`);
   }
 
   async createProduct(productData: {
@@ -102,175 +220,198 @@ class ApiService {
     description: string;
     price: number;
     quantity: number;
-    category: string;
-    image?: string;
-  }) {
-    return this.makeRequest('/products', {
+    category_id: number;
+    image_url?: string;
+  }): Promise<{ product: Product }> {
+    return this.request<{ product: Product }>('/products', {
       method: 'POST',
       body: JSON.stringify(productData),
     });
   }
 
-  async updateProduct(id: number, productData: any) {
-    return this.makeRequest(`/products/${id}`, {
+  async updateProduct(id: number, productData: Partial<Product>): Promise<{ product: Product }> {
+    return this.request<{ product: Product }>(`/products/${id}`, {
       method: 'PUT',
       body: JSON.stringify(productData),
     });
   }
 
-  async deleteProduct(id: number) {
-    return this.makeRequest(`/products/${id}`, {
-      method: 'DELETE',
+  async deleteProduct(id: number): Promise<void> {
+    return this.request(`/products/${id}`, { method: 'DELETE' });
+  }
+
+  // Cart APIs
+  async getCart(): Promise<{ cart_items: CartItem[]; summary: any }> {
+    return this.request<{ cart_items: CartItem[]; summary: any }>('/cart');
+  }
+
+  async addToCart(productId: number, quantity: number): Promise<{ cart_item: CartItem }> {
+    return this.request<{ cart_item: CartItem }>('/cart/add', {
+      method: 'POST',
+      body: JSON.stringify({ product_id: productId, quantity }),
     });
   }
 
-  // Order endpoints
-  async getOrders() {
-    return this.makeRequest('/orders');
+  async updateCartItem(productId: number, quantity: number): Promise<{ cart_item: CartItem }> {
+    return this.request<{ cart_item: CartItem }>(`/cart/update/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ quantity }),
+    });
   }
 
-  async getOrder(id: number) {
-    return this.makeRequest(`/orders/${id}`);
+  async removeFromCart(productId: number): Promise<void> {
+    return this.request(`/cart/remove/${productId}`, { method: 'DELETE' });
+  }
+
+  async clearCart(): Promise<void> {
+    return this.request('/cart/clear', { method: 'DELETE' });
+  }
+
+  async getCartCount(): Promise<{ total_items: number }> {
+    return this.request<{ total_items: number }>('/cart/count');
+  }
+
+  // Order APIs
+  async getOrders(page: number = 1, limit: number = 10): Promise<{ orders: Order[]; pagination: any }> {
+    return this.request<{ orders: Order[]; pagination: any }>(`/orders?page=${page}&limit=${limit}`);
+  }
+
+  async getOrder(id: number): Promise<{ order: Order }> {
+    return this.request<{ order: Order }>(`/orders/${id}`);
   }
 
   async createOrder(orderData: {
-    items: {
-      productId: number;
-      quantity: number;
-      price: number;
-    }[];
-    deliveryAddress: any;
-    paymentMethodId: number;
-    deliveryInstructions?: string;
-  }) {
-    return this.makeRequest('/orders', {
+    items: { product_id: number; quantity: number }[];
+    delivery_address: any;
+    payment_method: any;
+  }): Promise<{ order: Order }> {
+    return this.request<{ order: Order }>('/orders', {
       method: 'POST',
       body: JSON.stringify(orderData),
     });
   }
 
-  async updateOrderStatus(id: number, status: string) {
-    return this.makeRequest(`/orders/${id}/status`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
-    });
+  // Categories APIs
+  async getCategories(): Promise<{ categories: any[] }> {
+    return this.request<{ categories: any[] }>('/categories');
   }
 
-  // Message endpoints
-  async getConversations() {
-    return this.makeRequest('/messages/conversations');
+  // Messages APIs
+  async getConversations(): Promise<{ conversations: any[] }> {
+    return this.request<{ conversations: any[] }>('/messages/conversations');
   }
 
-  async getMessages(userId: number) {
-    return this.makeRequest(`/messages/${userId}`);
+  async getConversation(userId: number, page: number = 1): Promise<{ messages: any[]; other_user: any; pagination: any }> {
+    return this.request<{ messages: any[]; other_user: any; pagination: any }>(`/messages/conversation/${userId}?page=${page}`);
   }
 
-  async sendMessage(userId: number, message: string) {
-    return this.makeRequest('/messages', {
+  async sendMessage(recipientId: number, messageText: string): Promise<{ data: any }> {
+    return this.request<{ data: any }>('/messages/send', {
       method: 'POST',
-      body: JSON.stringify({ recipientId: userId, message }),
+      body: JSON.stringify({ recipient_id: recipientId, message_text: messageText }),
     });
   }
 
-  // Review endpoints
-  async getProductReviews(productId: number) {
-    return this.makeRequest(`/reviews/product/${productId}`);
+  // Notifications APIs
+  async getNotifications(page: number = 1): Promise<{ notifications: any[]; pagination: any }> {
+    return this.request<{ notifications: any[]; pagination: any }>(`/notifications?page=${page}`);
   }
 
-  async getUserReviews(userId: number) {
-    return this.makeRequest(`/reviews/user/${userId}`);
+  async getUnreadCount(): Promise<{ unread_count: number }> {
+    return this.request<{ unread_count: number }>('/notifications/unread-count');
+  }
+
+  async markNotificationRead(id: number): Promise<void> {
+    return this.request(`/notifications/${id}/read`, { method: 'PUT' });
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    return this.request('/notifications/mark-all-read', { method: 'PUT' });
+  }
+
+  // User Profile APIs
+  async getUserProfile(): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/users/profile');
+  }
+
+  async updateProfile(userData: Partial<User>): Promise<{ user: User }> {
+    return this.request<{ user: User }>('/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async getDashboard(): Promise<{ dashboard: any }> {
+    return this.request<{ dashboard: any }>('/users/dashboard');
+  }
+
+  // Addresses APIs
+  async getAddresses(): Promise<{ addresses: any[] }> {
+    return this.request<{ addresses: any[] }>('/addresses');
+  }
+
+  async getDefaultAddress(): Promise<{ address: any }> {
+    return this.request<{ address: any }>('/addresses/default');
+  }
+
+  async createAddress(addressData: any): Promise<{ address: any }> {
+    return this.request<{ address: any }>('/addresses', {
+      method: 'POST',
+      body: JSON.stringify(addressData),
+    });
+  }
+
+  async updateAddress(id: number, addressData: any): Promise<{ address: any }> {
+    return this.request<{ address: any }>(`/addresses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(addressData),
+    });
+  }
+
+  async deleteAddress(id: number): Promise<void> {
+    return this.request(`/addresses/${id}`, { method: 'DELETE' });
+  }
+
+  // Reviews APIs
+  async getProductReviews(productId: number, page: number = 1): Promise<{ reviews: any[]; rating_summary: any; pagination: any }> {
+    return this.request<{ reviews: any[]; rating_summary: any; pagination: any }>(`/reviews/product/${productId}?page=${page}`);
   }
 
   async createReview(reviewData: {
-    productId?: number;
-    sellerId?: number;
+    product_id: number;
     rating: number;
     title: string;
     comment: string;
-  }) {
-    return this.makeRequest('/reviews', {
+    order_id?: number;
+  }): Promise<{ review: any }> {
+    return this.request<{ review: any }>('/reviews', {
       method: 'POST',
       body: JSON.stringify(reviewData),
     });
   }
 
-  // Image upload
-  async uploadImage(imageUri: string): Promise<string> {
+  // File Upload APIs
+  async uploadProductImage(imageFile: any): Promise<{ image_url: string }> {
     const formData = new FormData();
-    
-    // Convert image URI to blob for web, or use as-is for React Native
-    if (imageUri.startsWith('data:')) {
-      // Base64 image
-      const response = await fetch(imageUri);
-      const blob = await response.blob();
-      formData.append('image', blob, 'image.jpg');
-    } else {
-      // File URI (React Native)
-      formData.append('image', {
-        uri: imageUri,
-        type: 'image/jpeg',
-        name: 'image.jpg',
-      } as any);
-    }
+    formData.append('image', imageFile);
 
-    const response = await fetch(`${API_BASE_URL}/upload/image`, {
+    const token = await this.getAuthToken();
+    const response = await fetch(`${this.baseURL}/upload/product-image`, {
       method: 'POST',
-      body: formData,
       headers: {
-        'Content-Type': 'multipart/form-data',
+        ...(token && { Authorization: `Bearer ${token}` }),
       },
+      body: formData,
     });
 
     if (!response.ok) {
-      throw new Error('Image upload failed');
+      throw new Error('Upload failed');
     }
 
-    const result = await response.json();
-    return result.imageUrl;
-  }
-
-  // Payment methods
-  async getPaymentMethods() {
-    return this.makeRequest('/payment-methods');
-  }
-
-  async addPaymentMethod(paymentData: any) {
-    return this.makeRequest('/payment-methods', {
-      method: 'POST',
-      body: JSON.stringify(paymentData),
-    });
-  }
-
-  async deletePaymentMethod(id: number) {
-    return this.makeRequest(`/payment-methods/${id}`, {
-      method: 'DELETE',
-    });
-  }
-
-  // Addresses
-  async getAddresses() {
-    return this.makeRequest('/addresses');
-  }
-
-  async addAddress(addressData: any) {
-    return this.makeRequest('/addresses', {
-      method: 'POST',
-      body: JSON.stringify(addressData),
-    });
-  }
-
-  async updateAddress(id: number, addressData: any) {
-    return this.makeRequest(`/addresses/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(addressData),
-    });
-  }
-
-  async deleteAddress(id: number) {
-    return this.makeRequest(`/addresses/${id}`, {
-      method: 'DELETE',
-    });
+    return response.json();
   }
 }
 
 export const apiService = new ApiService();
+export type { CartItem, Order, Product, User };
+

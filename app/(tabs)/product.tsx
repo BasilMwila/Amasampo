@@ -1,46 +1,73 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState } from 'react';
+/* eslint-disable react-hooks/exhaustive-deps */
+// app/(tabs)/product.tsx - Updated with real API integration
+import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
+import { COLORS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants/constants';
+import { apiService } from '../services/api';
 
-const categories = [
-  'Fruits',
-  'Vegetables',
-  'Bakery',
-  'Dairy',
-  'Meat & Seafood',
-  'Pantry',
-  'Beverages',
-  'Snacks',
-  'Other',
-];
+interface Category {
+  id: number;
+  name: string;
+  icon?: string;
+}
 
 export default function AddProductScreen() {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [category, setCategory] = useState('Fruits');
+  const [categoryId, setCategoryId] = useState<number | null>(null);
   const [description, setDescription] = useState('');
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingCategories, setLoadingCategories] = useState(true);
   const { user } = useAuth();
+
+  // Load categories when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadCategories();
+    }, [])
+  );
+
+  const loadCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const response = await apiService.getCategories();
+      setCategories(response.categories || []);
+      
+      // Set first category as default if available
+      if (response.categories && response.categories.length > 0 && !categoryId) {
+        setCategoryId(response.categories[0].id);
+      }
+    } catch (error: any) {
+      console.error('Failed to load categories:', error);
+      Alert.alert('Error', 'Failed to load categories. Please try again.');
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
 
   const resetForm = () => {
     setName('');
     setPrice('');
     setQuantity('');
-    setCategory('Fruits');
     setDescription('');
+    setCategoryId(categories.length > 0 ? categories[0].id : null);
   };
 
   const validateForm = () => {
@@ -54,13 +81,23 @@ export default function AddProductScreen() {
       return false;
     }
     
-    if (!quantity || parseInt(quantity) <= 0) {
-      Alert.alert('Error', 'Please enter a valid quantity');
+    if (!quantity || parseInt(quantity) < 0) {
+      Alert.alert('Error', 'Please enter a valid quantity (0 or more)');
+      return false;
+    }
+    
+    if (!categoryId) {
+      Alert.alert('Error', 'Please select a category');
       return false;
     }
     
     if (!description.trim()) {
       Alert.alert('Error', 'Please enter a product description');
+      return false;
+    }
+    
+    if (description.trim().length < 10) {
+      Alert.alert('Error', 'Description must be at least 10 characters long');
       return false;
     }
     
@@ -73,28 +110,20 @@ export default function AddProductScreen() {
     setLoading(true);
     
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const product = {
-        id: Date.now(),
+      const productData = {
         name: name.trim(),
+        description: description.trim(),
         price: parseFloat(price),
         quantity: parseInt(quantity),
-        category,
-        description: description.trim(),
-        sellerId: user?.id,
-        sellerName: user?.name,
-        shopName: user?.shopName,
-        image: 'https://images.unsplash.com/photo-1567306226416-28f0efdc88ce?w=300&h=200&fit=crop',
-        createdAt: new Date().toISOString(),
+        category_id: categoryId!,
+        // You can add image_url here when image upload is implemented
       };
 
-      console.log('New product:', product);
+      const response = await apiService.createProduct(productData);
       
       Alert.alert(
         'Success!',
-        'Your product has been added successfully',
+        SUCCESS_MESSAGES.PRODUCT_CREATED,
         [
           {
             text: 'Add Another',
@@ -108,14 +137,52 @@ export default function AddProductScreen() {
         ]
       );
       
-    } catch (error) {
-      Alert.alert('Error', 'Failed to add product. Please try again.');
+    } catch (error: any) {
+      console.error('Failed to create product:', error);
+      
+      let errorMessage = ERROR_MESSAGES.UNKNOWN_ERROR;
+      
+      if (error.message) {
+        if (error.message.includes('Validation')) {
+          errorMessage = 'Please check your product information and try again.';
+        } else if (error.message.includes('Network')) {
+          errorMessage = ERROR_MESSAGES.NETWORK_ERROR;
+        } else if (error.message.includes('Unauthorized')) {
+          errorMessage = ERROR_MESSAGES.UNAUTHORIZED;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  if (user?.type !== 'seller') {
+  const getSelectedCategoryName = () => {
+    const category = categories.find(cat => cat.id === categoryId);
+    return category ? category.name : 'Select Category';
+  };
+
+  const getCategoryIcon = (categoryName: string) => {
+    const iconMap: { [key: string]: string } = {
+      'Electronics': '📱',
+      'Clothing': '👕',
+      'Food': '🍎',
+      'Home & Garden': '🏡',
+      'Sports & Recreation': '⚽',
+      'Books & Media': '📚',
+      'Toys & Games': '🧸',
+      'Health & Beauty': '💄',
+      'Automotive': '🚗',
+      'Arts & Crafts': '🎨',
+      'Services': '🔧',
+    };
+    return iconMap[categoryName] || '📦';
+  };
+
+  if (user?.user_type !== 'seller') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
@@ -142,6 +209,7 @@ export default function AddProductScreen() {
           style={styles.scrollView}
           contentContainerStyle={styles.formContainer}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
           <View style={styles.form}>
             <View style={styles.fieldContainer}>
@@ -152,12 +220,13 @@ export default function AddProductScreen() {
                 value={name}
                 onChangeText={setName}
                 maxLength={100}
+                editable={!loading}
               />
             </View>
 
             <View style={styles.row}>
               <View style={[styles.fieldContainer, styles.halfField]}>
-                <Text style={styles.label}>Price *</Text>
+                <Text style={styles.label}>Price ($) *</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="0.00"
@@ -165,6 +234,7 @@ export default function AddProductScreen() {
                   onChangeText={setPrice}
                   keyboardType="decimal-pad"
                   maxLength={10}
+                  editable={!loading}
                 />
               </View>
 
@@ -177,38 +247,50 @@ export default function AddProductScreen() {
                   onChangeText={setQuantity}
                   keyboardType="numeric"
                   maxLength={6}
+                  editable={!loading}
                 />
               </View>
             </View>
 
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Category *</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.categoryScrollView}
-                contentContainerStyle={styles.categoryContainer}
-              >
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat}
-                    style={[
-                      styles.categoryButton,
-                      category === cat && styles.categoryButtonSelected,
-                    ]}
-                    onPress={() => setCategory(cat)}
-                  >
-                    <Text
+              {loadingCategories ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color={COLORS.PRIMARY} />
+                  <Text style={styles.loadingText}>Loading categories...</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.categoryScrollView}
+                  contentContainerStyle={styles.categoryContainer}
+                >
+                  {categories.map((category) => (
+                    <TouchableOpacity
+                      key={category.id}
                       style={[
-                        styles.categoryText,
-                        category === cat && styles.categoryTextSelected,
+                        styles.categoryButton,
+                        categoryId === category.id && styles.categoryButtonSelected,
                       ]}
+                      onPress={() => setCategoryId(category.id)}
+                      disabled={loading}
                     >
-                      {cat}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                      <Text style={styles.categoryIcon}>
+                        {category.icon || getCategoryIcon(category.name)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.categoryText,
+                          categoryId === category.id && styles.categoryTextSelected,
+                        ]}
+                      >
+                        {category.name}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
             </View>
 
             <View style={styles.fieldContainer}>
@@ -222,6 +304,7 @@ export default function AddProductScreen() {
                 numberOfLines={4}
                 maxLength={500}
                 textAlignVertical="top"
+                editable={!loading}
               />
               <Text style={styles.characterCount}>
                 {description.length}/500 characters
@@ -241,7 +324,7 @@ export default function AddProductScreen() {
                   Available: {quantity || '0'}
                 </Text>
                 <Text style={styles.previewCategory}>
-                  Category: {category}
+                  Category: {getSelectedCategoryName()}
                 </Text>
                 <Text style={styles.previewDescription}>
                   {description || 'Product description will appear here...'}
@@ -253,7 +336,7 @@ export default function AddProductScreen() {
 
         <View style={styles.footer}>
           <TouchableOpacity
-            style={styles.resetButton}
+            style={[styles.resetButton, loading && styles.buttonDisabled]}
             onPress={resetForm}
             disabled={loading}
           >
@@ -261,13 +344,18 @@ export default function AddProductScreen() {
           </TouchableOpacity>
           
           <TouchableOpacity
-            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+            style={[styles.submitButton, loading && styles.buttonDisabled]}
             onPress={handleSubmit}
-            disabled={loading}
+            disabled={loading || loadingCategories}
           >
-            <Text style={styles.submitButtonText}>
-              {loading ? 'Adding Product...' : 'Add Product'}
-            </Text>
+            {loading ? (
+              <View style={styles.loadingButtonContent}>
+                <ActivityIndicator size="small" color={COLORS.CARD} />
+                <Text style={styles.submitButtonText}>Adding...</Text>
+              </View>
+            ) : (
+              <Text style={styles.submitButtonText}>Add Product</Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -278,23 +366,23 @@ export default function AddProductScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: COLORS.BACKGROUND,
   },
   header: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.BORDER,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     marginTop: 4,
   },
   scrollView: {
@@ -319,17 +407,17 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#374151',
+    color: COLORS.TEXT_PRIMARY,
   },
   input: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: COLORS.BORDER,
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 16,
     fontSize: 16,
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   textArea: {
     height: 100,
@@ -337,8 +425,19 @@ const styles = StyleSheet.create({
   },
   characterCount: {
     fontSize: 12,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     textAlign: 'right',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
   },
   categoryScrollView: {
     marginVertical: 8,
@@ -347,24 +446,31 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   categoryButton: {
-    paddingHorizontal: 20,
+    alignItems: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 20,
-    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    backgroundColor: COLORS.CARD,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: COLORS.BORDER,
+    minWidth: 80,
   },
   categoryButtonSelected: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
+    borderColor: COLORS.PRIMARY,
+  },
+  categoryIcon: {
+    fontSize: 20,
+    marginBottom: 4,
   },
   categoryText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '500',
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
+    textAlign: 'center',
   },
   categoryTextSelected: {
-    color: '#ffffff',
+    color: COLORS.CARD,
   },
   previewContainer: {
     marginTop: 20,
@@ -372,75 +478,83 @@ const styles = StyleSheet.create({
   previewTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#374151',
+    color: COLORS.TEXT_PRIMARY,
     marginBottom: 12,
   },
   previewCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: COLORS.BORDER,
     gap: 8,
   },
   previewName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   previewPrice: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#3b82f6',
+    color: COLORS.PRIMARY,
   },
   previewQuantity: {
     fontSize: 14,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
   previewCategory: {
     fontSize: 14,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
   previewDescription: {
     fontSize: 14,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     lineHeight: 20,
   },
   footer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: COLORS.BORDER,
     gap: 12,
   },
   resetButton: {
     flex: 1,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: COLORS.BACKGROUND,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
   },
   resetButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6b7280',
+    color: COLORS.TEXT_PRIMARY,
   },
   submitButton: {
     flex: 2,
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.6,
+  },
+  loadingButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   submitButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#ffffff',
+    color: COLORS.CARD,
   },
   errorContainer: {
     flex: 1,
@@ -450,7 +564,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
   },
 });

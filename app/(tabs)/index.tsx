@@ -14,7 +14,7 @@ import {
   View
 } from 'react-native';
 import { useAuth } from '../_layout';
-import { CATEGORIES } from '../constants';
+import { CATEGORIES } from '../constants/constants';
 import { apiService } from '../services/api';
 
 interface Product {
