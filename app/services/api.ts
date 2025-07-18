@@ -4,7 +4,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Backend URL - Update this to your actual backend URL
-const API_BASE_URL = 'http://localhost:3000/api'; // Change to your backend URL
+const API_BASE_URL = 'http://10.67.69.23:3000/api'; // Change to your backend URL
 
 interface ApiResponse<T = any> {
   data?: T;
@@ -25,6 +25,9 @@ interface User {
 }
 
 interface Product {
+  is_on_sale: unknown;
+  distance: number;
+  original_price: any;
   id: number;
   name: string;
   description: string;
