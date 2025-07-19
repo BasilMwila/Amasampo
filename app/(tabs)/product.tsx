@@ -1,11 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-// app/(tabs)/product.tsx - Updated with real API integration
+// app/(tabs)/product.tsx - Enhanced with image upload functionality
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -26,6 +28,12 @@ interface Category {
   icon?: string;
 }
 
+interface ProductImage {
+  uri: string;
+  name: string;
+  type: string;
+}
+
 export default function AddProductScreen() {
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -33,16 +41,33 @@ export default function AddProductScreen() {
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [description, setDescription] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
+  const [productImages, setProductImages] = useState<ProductImage[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingCategories, setLoadingCategories] = useState(true);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const { user } = useAuth();
 
   // Load categories when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadCategories();
+      requestPermissions();
     }, [])
   );
+
+  const requestPermissions = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Required',
+        'We need camera roll permissions to upload product images.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => ImagePicker.requestMediaLibraryPermissionsAsync() }
+        ]
+      );
+    }
+  };
 
   const loadCategories = async () => {
     try {
@@ -62,11 +87,98 @@ export default function AddProductScreen() {
     }
   };
 
+  const pickImages = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        aspect: [1, 1],
+        allowsEditing: false,
+      });
+
+      if (!result.canceled && result.assets) {
+        const newImages: ProductImage[] = result.assets.map((asset, index) => ({
+          uri: asset.uri,
+          name: `product_image_${Date.now()}_${index}.jpg`,
+          type: 'image/jpeg',
+        }));
+
+        setProductImages(prev => [...prev, ...newImages].slice(0, 5)); // Max 5 images
+      }
+    } catch (error) {
+      console.error('Error picking images:', error);
+      Alert.alert('Error', 'Failed to pick images. Please try again.');
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'We need camera permissions to take photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        aspect: [1, 1],
+        allowsEditing: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const newImage: ProductImage = {
+          uri: result.assets[0].uri,
+          name: `product_photo_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        };
+
+        setProductImages(prev => [...prev, newImage].slice(0, 5));
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
+    }
+  };
+
+  const removeImage = (index: number) => {
+    setProductImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadImages = async (): Promise<string[]> => {
+    if (productImages.length === 0) return [];
+
+    setUploadingImages(true);
+    const uploadedUrls: string[] = [];
+
+    try {
+      for (const image of productImages) {
+        const formData = new FormData();
+        formData.append('image', {
+          uri: image.uri,
+          name: image.name,
+          type: image.type,
+        } as any);
+
+        const response = await apiService.uploadProductImage(formData);
+        uploadedUrls.push(response.image_url);
+      }
+
+      return uploadedUrls;
+    } catch (error: any) {
+      console.error('Error uploading images:', error);
+      throw new Error('Failed to upload images. Please try again.');
+    } finally {
+      setUploadingImages(false);
+    }
+  };
+
   const resetForm = () => {
     setName('');
     setPrice('');
     setQuantity('');
     setDescription('');
+    setProductImages([]);
     setCategoryId(categories.length > 0 ? categories[0].id : null);
   };
 
@@ -110,13 +222,17 @@ export default function AddProductScreen() {
     setLoading(true);
     
     try {
+      // Upload images first
+      const imageUrls = await uploadImages();
+
       const productData = {
         name: name.trim(),
         description: description.trim(),
         price: parseFloat(price),
         quantity: parseInt(quantity),
         category_id: categoryId!,
-        // You can add image_url here when image upload is implemented
+        image_url: imageUrls.length > 0 ? imageUrls[0] : undefined,
+        images: imageUrls.length > 1 ? imageUrls : undefined,
       };
 
       const response = await apiService.createProduct(productData);
@@ -158,6 +274,18 @@ export default function AddProductScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const showImageOptions = () => {
+    Alert.alert(
+      'Add Product Image',
+      'Choose how you want to add an image',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: takePhoto },
+        { text: 'Choose from Gallery', onPress: pickImages },
+      ]
+    );
   };
 
   const getSelectedCategoryName = () => {
@@ -212,6 +340,45 @@ export default function AddProductScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.form}>
+            {/* Product Images Section */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>Product Images ({productImages.length}/5)</Text>
+              <View style={styles.imagesContainer}>
+                {productImages.map((image, index) => (
+                  <View key={index} style={styles.imageContainer}>
+                    <Image source={{ uri: image.uri }} style={styles.productImage} />
+                    <TouchableOpacity
+                      style={styles.removeImageButton}
+                      onPress={() => removeImage(index)}
+                    >
+                      <Text style={styles.removeImageText}>×</Text>
+                    </TouchableOpacity>
+                    {index === 0 && (
+                      <View style={styles.primaryImageBadge}>
+                        <Text style={styles.primaryImageText}>Main</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+                
+                {productImages.length < 5 && (
+                  <TouchableOpacity
+                    style={styles.addImageButton}
+                    onPress={showImageOptions}
+                    disabled={loading || uploadingImages}
+                  >
+                    <Text style={styles.addImageIcon}>📷</Text>
+                    <Text style={styles.addImageText}>Add Image</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {productImages.length === 0 && (
+                <Text style={styles.imageHint}>
+                  Add at least one image to showcase your product
+                </Text>
+              )}
+            </View>
+
             <View style={styles.fieldContainer}>
               <Text style={styles.label}>Product Name *</Text>
               <TextInput
@@ -314,6 +481,9 @@ export default function AddProductScreen() {
             <View style={styles.previewContainer}>
               <Text style={styles.previewTitle}>Preview</Text>
               <View style={styles.previewCard}>
+                {productImages.length > 0 && (
+                  <Image source={{ uri: productImages[0].uri }} style={styles.previewImage} />
+                )}
                 <Text style={styles.previewName}>
                   {name || 'Product name will appear here'}
                 </Text>
@@ -348,10 +518,12 @@ export default function AddProductScreen() {
             onPress={handleSubmit}
             disabled={loading || loadingCategories}
           >
-            {loading ? (
+            {loading || uploadingImages ? (
               <View style={styles.loadingButtonContent}>
                 <ActivityIndicator size="small" color={COLORS.CARD} />
-                <Text style={styles.submitButtonText}>Adding...</Text>
+                <Text style={styles.submitButtonText}>
+                  {uploadingImages ? 'Uploading...' : 'Adding...'}
+                </Text>
               </View>
             ) : (
               <Text style={styles.submitButtonText}>Add Product</Text>
@@ -428,6 +600,78 @@ const styles = StyleSheet.create({
     color: COLORS.TEXT_SECONDARY,
     textAlign: 'right',
   },
+  // Image upload styles
+  imagesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  imageContainer: {
+    position: 'relative',
+    width: 100,
+    height: 100,
+  },
+  productImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    backgroundColor: COLORS.BORDER,
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  removeImageText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  primaryImageBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    backgroundColor: COLORS.PRIMARY,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  primaryImageText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  addImageButton: {
+    width: 100,
+    height: 100,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.BORDER,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.CARD,
+  },
+  addImageIcon: {
+    fontSize: 24,
+    marginBottom: 4,
+  },
+  addImageText: {
+    fontSize: 12,
+    color: COLORS.TEXT_SECONDARY,
+    textAlign: 'center',
+  },
+  imageHint: {
+    fontSize: 12,
+    color: COLORS.TEXT_SECONDARY,
+    fontStyle: 'italic',
+  },
   loadingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -488,6 +732,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.BORDER,
     gap: 8,
+  },
+  previewImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    backgroundColor: COLORS.BORDER,
+    marginBottom: 8,
   },
   previewName: {
     fontSize: 18,
