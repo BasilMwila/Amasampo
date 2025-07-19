@@ -1,7 +1,7 @@
-
-// app/_layout.tsx - Updated with real API integration
+// app/_layout.tsx - Complete updated layout with proper logout handling
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { apiService, type User } from './services/api';
@@ -14,6 +14,8 @@ interface AuthContextType {
   loading: boolean;
   isAuthenticated: boolean;
   updateUser: (userData: Partial<User>) => void;
+  checkAuthStatus: () => Promise<boolean>;
+  refreshAuth: () => Promise<void>;
 }
 
 interface RegisterData {
@@ -35,66 +37,125 @@ export function useAuth() {
   return context;
 }
 
-export default function RootLayout() {
+function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
 
   // Check for existing authentication on app start
   useEffect(() => {
-    checkAuthStatus();
+    initializeAuth();
   }, []);
 
-  const checkAuthStatus = async () => {
+  const initializeAuth = async () => {
     try {
-      setLoading(true);
+      setInitializing(true);
+      await checkAuthStatus();
+    } catch (error) {
+      console.error('Auth initialization failed:', error);
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  const checkAuthStatus = async (): Promise<boolean> => {
+    try {
       const token = await AsyncStorage.getItem('auth_token');
+      const storedUser = await AsyncStorage.getItem('user');
       
-      if (token) {
+      if (token && storedUser) {
         try {
+          // Try to get current user info to validate token
           const response = await apiService.getCurrentUser();
           setUser(response.user);
-        } catch (error) {
-          console.error('Error fetching current user:', error);
-          // Token might be expired, try to refresh
+          
+          // Update stored user data if different
+          await AsyncStorage.setItem('user', JSON.stringify(response.user));
+          
+          console.log('✅ Auth status: Authenticated');
+          return true;
+        } catch (error: any) {
+          console.warn('Token validation failed:', error.message);
+          
+          // Try to refresh token
           try {
+            console.log('🔄 Attempting token refresh...');
             await apiService.refreshToken();
+            
+            // Try getting user again with new token
             const response = await apiService.getCurrentUser();
             setUser(response.user);
-          } catch (refreshError) {
-            console.error('Token refresh failed:', refreshError);
-            // Clear invalid tokens
-            await AsyncStorage.multiRemove(['auth_token', 'refresh_token']);
-            setUser(null);
+            await AsyncStorage.setItem('user', JSON.stringify(response.user));
+            
+            console.log('✅ Token refreshed successfully');
+            return true;
+          } catch (refreshError: any) {
+            console.warn('Token refresh failed:', refreshError.message);
+            
+            // Clear invalid tokens and user data
+            await clearAuthData();
+            return false;
           }
         }
+      } else {
+        console.log('ℹ️ No stored auth data found');
+        await clearAuthData();
+        return false;
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
+      console.error('Auth status check failed:', error);
+      await clearAuthData();
+      return false;
+    }
+  };
+
+  const clearAuthData = async () => {
+    try {
+      await AsyncStorage.multiRemove(['auth_token', 'refresh_token', 'user']);
       setUser(null);
-    } finally {
-      setLoading(false);
-      setInitializing(false);
+      console.log('🗑️ Auth data cleared');
+    } catch (error) {
+      console.error('Error clearing auth data:', error);
     }
   };
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setLoading(true);
-      const response = await apiService.login(email, password);
-      setUser(response.user);
-      return true;
-    } catch (error: any) {
-      console.error('Login failed:', error);
+      console.log('🔄 Attempting login...');
       
+      const response = await apiService.login(email, password);
+      
+      if (response.user && response.tokens) {
+        setUser(response.user);
+        
+        // Store user data explicitly (apiService already stores tokens)
+        await AsyncStorage.setItem('user', JSON.stringify(response.user));
+        
+        console.log('✅ Login successful');
+        return true;
+      } else {
+        console.error('❌ Login failed: Invalid response format');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('❌ Login failed:', error.message);
+      
+      // Provide user-friendly error messages
       let errorMessage = 'Login failed. Please try again.';
+      
       if (error.message) {
-        if (error.message.includes('Invalid email or password')) {
+        if (error.message.includes('Invalid email or password') || 
+            error.message.includes('INVALID_CREDENTIALS')) {
           errorMessage = 'Invalid email or password. Please check your credentials.';
-        } else if (error.message.includes('Account is deactivated')) {
+        } else if (error.message.includes('Account is deactivated') || 
+                   error.message.includes('ACCOUNT_DEACTIVATED')) {
           errorMessage = 'Your account has been deactivated. Please contact support.';
-        } else if (error.message.includes('Network')) {
+        } else if (error.message.includes('Network') || 
+                   error.message.includes('Failed to fetch')) {
           errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message.includes('Too many')) {
+          errorMessage = 'Too many login attempts. Please try again later.';
         }
       }
       
@@ -108,20 +169,40 @@ export default function RootLayout() {
   const register = async (userData: RegisterData): Promise<boolean> => {
     try {
       setLoading(true);
-      const response = await apiService.register(userData);
-      setUser(response.user);
-      return true;
-    } catch (error: any) {
-      console.error('Registration failed:', error);
+      console.log('🔄 Attempting registration...');
       
+      const response = await apiService.register(userData);
+      
+      if (response.user && response.tokens) {
+        setUser(response.user);
+        
+        // Store user data explicitly (apiService already stores tokens)
+        await AsyncStorage.setItem('user', JSON.stringify(response.user));
+        
+        console.log('✅ Registration successful');
+        return true;
+      } else {
+        console.error('❌ Registration failed: Invalid response format');
+        return false;
+      }
+    } catch (error: any) {
+      console.error('❌ Registration failed:', error.message);
+      
+      // Provide user-friendly error messages
       let errorMessage = 'Registration failed. Please try again.';
+      
       if (error.message) {
-        if (error.message.includes('already exists')) {
-          errorMessage = 'An account with this email already exists.';
-        } else if (error.message.includes('Validation')) {
+        if (error.message.includes('already exists') || 
+            error.message.includes('EMAIL_ALREADY_EXISTS')) {
+          errorMessage = 'An account with this email already exists. Please try logging in instead.';
+        } else if (error.message.includes('Validation') || 
+                   error.message.includes('VALIDATION_ERROR')) {
           errorMessage = 'Please check your information and try again.';
-        } else if (error.message.includes('Network')) {
+        } else if (error.message.includes('Network') || 
+                   error.message.includes('Failed to fetch')) {
           errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message.includes('Password')) {
+          errorMessage = 'Password must be at least 8 characters with letters and numbers.';
         }
       }
       
@@ -135,18 +216,54 @@ export default function RootLayout() {
   const logout = async (): Promise<void> => {
     try {
       setLoading(true);
-      await apiService.logout();
-    } catch (error) {
-      console.error('Logout error:', error);
+      console.log('🔄 Starting logout process...');
+      
+      // Call logout API to blacklist tokens on server
+      try {
+        await apiService.logout();
+        console.log('✅ Server logout successful');
+      } catch (logoutError: any) {
+        console.warn('⚠️ Server logout failed (continuing with local cleanup):', logoutError.message);
+        // Continue with local cleanup even if server call fails
+      }
+      
+      // Clear local state and storage
+      await clearAuthData();
+      
+      console.log('✅ Logout completed successfully');
+      
+    } catch (error: any) {
+      console.error('❌ Logout error:', error.message);
+      
+      // Even if there's an error, still clear local data
+      await clearAuthData();
+      
+      console.log('⚠️ Logout completed with errors (local cleanup successful)');
     } finally {
-      setUser(null);
       setLoading(false);
     }
   };
 
   const updateUser = (userData: Partial<User>) => {
     if (user) {
-      setUser({ ...user, ...userData });
+      const updatedUser = { ...user, ...userData };
+      setUser(updatedUser);
+      
+      // Update stored user data
+      AsyncStorage.setItem('user', JSON.stringify(updatedUser)).catch(error => {
+        console.error('Error updating stored user data:', error);
+      });
+    }
+  };
+
+  const refreshAuth = async (): Promise<void> => {
+    try {
+      setLoading(true);
+      await checkAuthStatus();
+    } catch (error) {
+      console.error('Auth refresh failed:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -158,7 +275,28 @@ export default function RootLayout() {
     loading,
     isAuthenticated: !!user,
     updateUser,
+    checkAuthStatus,
+    refreshAuth,
   };
+
+  return (
+    <AuthContext.Provider value={authValue}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export default function RootLayout() {
+  const [initializing, setInitializing] = useState(true);
+
+  useEffect(() => {
+    // Simulate minimal initialization time
+    const timer = setTimeout(() => {
+      setInitializing(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // Show loading screen while initializing
   if (initializing) {
@@ -170,135 +308,215 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthContext.Provider value={authValue}>
-      <Stack screenOptions={{ headerShown: false }}>
-        {user ? (
-          // User is authenticated
-          <>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen 
-              name="products/[id]" 
-              options={{ 
-                headerShown: true,
-                title: 'Product Details',
-                headerBackTitle: 'Back'
-              }} 
-            />
-            <Stack.Screen 
-              name="chat/[userId]" 
-              options={{ 
-                headerShown: true,
-                title: 'Chat',
-                headerBackTitle: 'Back'
-              }} 
-            />
-            <Stack.Screen 
-              name="checkout" 
-              options={{ 
-                headerShown: true,
-                title: 'Checkout',
-                headerBackTitle: 'Cart'
-              }} 
-            />
-            <Stack.Screen 
-              name="orders" 
-              options={{ 
-                headerShown: true,
-                title: 'Orders',
-                headerBackTitle: 'Back'
-              }} 
-            />
-            <Stack.Screen 
-              name="notifications" 
-              options={{ 
-                headerShown: true,
-                title: 'Notifications',
-                headerBackTitle: 'Back'
-              }} 
-            />
-            <Stack.Screen 
-              name="settings" 
-              options={{ 
-                headerShown: true,
-                title: 'Settings',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="addresses" 
-              options={{ 
-                headerShown: true,
-                title: 'Addresses',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="payment/methods" 
-              options={{ 
-                headerShown: true,
-                title: 'Payment Methods',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="dashboard" 
-              options={{ 
-                headerShown: true,
-                title: 'Dashboard',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="products/manage" 
-              options={{ 
-                headerShown: true,
-                title: 'Manage Products',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="reviews/all" 
-              options={{ 
-                headerShown: true,
-                title: 'Reviews',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="help" 
-              options={{ 
-                headerShown: true,
-                title: 'Help & Support',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="legal" 
-              options={{ 
-                headerShown: true,
-                title: 'Terms & Privacy',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-            <Stack.Screen 
-              name="about" 
-              options={{ 
-                headerShown: true,
-                title: 'About',
-                headerBackTitle: 'Profile'
-              }} 
-            />
-          </>
-        ) : (
-          // User is not authenticated
-          <>
-            <Stack.Screen name="auth/login" options={{ headerShown: false }} />
-            <Stack.Screen name="auth/register" options={{ headerShown: false }} />
-            <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
-          </>
-        )}
-      </Stack>
-    </AuthContext.Provider>
+    <AuthProvider>
+      <AuthScreens />
+      <StatusBar style="auto" />
+    </AuthProvider>
+  );
+}
+
+function AuthScreens() {
+  const { user, isAuthenticated } = useAuth();
+
+  // Handle navigation when auth state changes
+  useEffect(() => {
+    if (!isAuthenticated && !user) {
+      console.log('🔄 User logged out, navigating to auth screen...');
+      // Use a small delay to ensure state has fully updated
+      setTimeout(() => {
+        router.replace('/auth/welcome');
+      }, 100);
+    }
+  }, [isAuthenticated, user]);
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      {isAuthenticated && user ? (
+        // User is authenticated - show app screens
+        <>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen 
+            name="products/[id]" 
+            options={{ 
+              headerShown: true,
+              title: 'Product Details',
+              headerBackTitle: 'Back',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="chat/[userId]" 
+            options={{ 
+              headerShown: true,
+              title: 'Chat',
+              headerBackTitle: 'Back',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="checkout" 
+            options={{ 
+              headerShown: true,
+              title: 'Checkout',
+              headerBackTitle: 'Cart',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="orders" 
+            options={{ 
+              headerShown: true,
+              title: 'My Orders',
+              headerBackTitle: 'Back',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="notifications" 
+            options={{ 
+              headerShown: true,
+              title: 'Notifications',
+              headerBackTitle: 'Back',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="settings" 
+            options={{ 
+              headerShown: true,
+              title: 'Settings',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="addresses" 
+            options={{ 
+              headerShown: true,
+              title: 'My Addresses',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="payment/methods" 
+            options={{ 
+              headerShown: true,
+              title: 'Payment Methods',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="dashboard" 
+            options={{ 
+              headerShown: true,
+              title: 'Seller Dashboard',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="products/manage" 
+            options={{ 
+              headerShown: true,
+              title: 'Manage Products',
+              headerBackTitle: 'Dashboard',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="reviews/all" 
+            options={{ 
+              headerShown: true,
+              title: 'My Reviews',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="help" 
+            options={{ 
+              headerShown: true,
+              title: 'Help & Support',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="legal" 
+            options={{ 
+              headerShown: true,
+              title: 'Terms & Privacy',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="about" 
+            options={{ 
+              headerShown: true,
+              title: 'About Marketplace',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="profile/edit" 
+            options={{ 
+              headerShown: true,
+              title: 'Edit Profile',
+              headerBackTitle: 'Profile',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+          <Stack.Screen 
+            name="search" 
+            options={{ 
+              headerShown: true,
+              title: 'Search',
+              headerBackTitle: 'Back',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+        </>
+      ) : (
+        // User is not authenticated - show auth screens
+        <>
+          <Stack.Screen name="index" options={{ headerShown: false }} />
+          <Stack.Screen name="auth/welcome" options={{ headerShown: false }} />
+          <Stack.Screen name="auth/login" options={{ headerShown: false }} />
+          <Stack.Screen name="auth/register" options={{ headerShown: false }} />
+          <Stack.Screen 
+            name="auth/forgot-password" 
+            options={{ 
+              headerShown: true,
+              title: 'Reset Password',
+              headerBackTitle: 'Login',
+              headerStyle: { backgroundColor: '#f8f9fa' },
+              headerTintColor: '#1a1a1a',
+            }} 
+          />
+        </>
+      )}
+    </Stack>
   );
 }
 
