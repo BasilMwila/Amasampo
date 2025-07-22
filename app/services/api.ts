@@ -3,7 +3,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Backend URL - Update this to your actual backend URL
-const API_BASE_URL = 'http://192.168.1.184:3000/api'; // Update this to your backend URL
+const API_BASE_URL = 'http://192.168.0.184:3000/api'; // Update this to your backend URL
 
 interface ApiResponse<T = any> {
   data?: T;
@@ -723,47 +723,125 @@ class ApiService {
   }
 
   // File Upload APIs
-  async uploadProductImage(imageFile: any): Promise<{ image_url: string; filename: string; message: string }> {
-    const formData = new FormData();
-    formData.append('image', imageFile);
-
+  async uploadProductImage(formData: FormData): Promise<{ image_url: string; filename: string; message: string }> {
+  try {
     const token = await this.getAuthToken();
+    
+    console.log('Uploading to:', `${this.baseURL}/upload/product-image`);
+    console.log('Auth token available:', !!token);
+    
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout for uploads
+
     const response = await fetch(`${this.baseURL}/upload/product-image`, {
       method: 'POST',
       headers: {
         ...(token && { Authorization: `Bearer ${token}` }),
+        // Don't set Content-Type for FormData - let the browser set it with boundary
       },
       body: formData,
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+
+    console.log('Upload response status:', response.status);
+    console.log('Upload response headers:', response.headers);
+
+    const responseText = await response.text();
+    console.log('Upload response body:', responseText);
+
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Upload failed');
+      let errorMessage = 'Upload failed';
+      
+      try {
+        const errorData = JSON.parse(responseText);
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } catch (e) {
+        // If response isn't JSON, use status text or default message
+        errorMessage = response.statusText || errorMessage;
+      }
+      
+      console.error('Upload failed:', errorMessage);
+      
+      // Provide more specific error messages based on status
+      if (response.status === 413) {
+        throw new Error('Image file is too large. Please choose a smaller image.');
+      } else if (response.status === 415) {
+        throw new Error('Unsupported image format. Please use JPG or PNG images.');
+      } else if (response.status === 401) {
+        throw new Error('Authentication failed. Please log in again.');
+      } else if (response.status >= 500) {
+        throw new Error('Server error. Please try again later.');
+      } else {
+        throw new Error(errorMessage);
+      }
     }
 
-    return response.json();
+    try {
+      const result = JSON.parse(responseText);
+      console.log('Upload successful:', result);
+      return result;
+    } catch (e) {
+      console.error('Failed to parse upload response:', e);
+      throw new Error('Invalid response from server');
+    }
+
+  } catch (error: any) {
+    console.error('Upload error:', error);
+    
+    if (error.name === 'AbortError') {
+      throw new Error('Upload timed out. Please check your connection and try again.');
+    }
+    
+    if (error.message?.includes('Network request failed') || error.message?.includes('Failed to fetch')) {
+      throw new Error('Network error. Please check your connection and try again.');
+    }
+    
+    // Re-throw the error if it already has a meaningful message
+    throw error;
   }
+}
 
-  async uploadAvatar(imageFile: any): Promise<{ avatar_url: string; filename: string; message: string }> {
-    const formData = new FormData();
-    formData.append('avatar', imageFile);
-
+async uploadAvatar(formData: FormData): Promise<{ avatar_url: string; filename: string; message: string }> {
+  try {
     const token = await this.getAuthToken();
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
     const response = await fetch(`${this.baseURL}/upload/avatar`, {
       method: 'POST',
       headers: {
         ...(token && { Authorization: `Bearer ${token}` }),
       },
       body: formData,
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Upload failed');
+      
+      if (response.status === 413) {
+        throw new Error('Image file is too large. Please choose a smaller image.');
+      } else if (response.status === 415) {
+        throw new Error('Unsupported image format. Please use JPG or PNG images.');
+      } else {
+        throw new Error(errorData.error || 'Upload failed');
+      }
     }
 
     return response.json();
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      throw new Error('Upload timed out. Please try again.');
+    }
+    throw error;
   }
+}
 
   // Utility methods
   async checkConnection(): Promise<boolean> {
@@ -798,3 +876,4 @@ class ApiService {
 
 export const apiService = new ApiService();
 export type { AuthTokens, CartItem, Order, Product, User };
+
