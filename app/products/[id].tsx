@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-// app/products/[id].tsx - Product detail screen with real API integration
+// app/products/[id].tsx - Product detail screen with consistent image handling
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,16 +16,7 @@ import {
 } from 'react-native';
 import { useAuth } from '../_layout';
 import { COLORS, DEFAULT_IMAGES, ERROR_MESSAGES } from '../constants/constants';
-import { apiService, type Product } from '../services/api';
-
-interface Review {
-  id: number;
-  user_name: string;
-  rating: number;
-  title: string;
-  comment: string;
-  created_at: string;
-}
+import { apiService, type Product, type Review } from '../services/api';
 
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,6 +26,8 @@ export default function ProductDetailScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [cartQuantity, setCartQuantity] = useState(1);
+  const [imageError, setImageError] = useState(false);
+  const [imageLoading, setImageLoading] = useState(true);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -59,6 +52,10 @@ export default function ProductDetailScreen() {
 
       setProduct(productResponse.product);
       setReviews(reviewsResponse.reviews || []);
+      
+      // Reset image states when product changes
+      setImageError(false);
+      setImageLoading(true);
     } catch (error: any) {
       console.error('Failed to load product:', error);
       Alert.alert('Error', error.message || ERROR_MESSAGES.NETWORK_ERROR);
@@ -66,6 +63,24 @@ export default function ProductDetailScreen() {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  const handleImageError = () => {
+    console.log('Product image failed to load:', product?.name);
+    setImageError(true);
+    setImageLoading(false);
+  };
+
+  const handleImageLoad = () => {
+    setImageLoading(false);
+    setImageError(false);
+  };
+
+  const getImageSource = () => {
+    if (!product?.image_url || imageError) {
+      return { uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER };
+    }
+    return { uri: product.image_url };
   };
 
   const handleAddToCart = async () => {
@@ -171,7 +186,7 @@ export default function ProductDetailScreen() {
   const ReviewItem = ({ review }: { review: Review }) => (
     <View style={styles.reviewItem}>
       <View style={styles.reviewHeader}>
-        <Text style={styles.reviewerName}>{review.user_name}</Text>
+        <Text style={styles.reviewerName}>{review.user_name || 'Anonymous'}</Text>
         <Text style={styles.reviewDate}>{formatDate(review.created_at)}</Text>
       </View>
       <View style={styles.reviewRating}>
@@ -229,10 +244,19 @@ export default function ProductDetailScreen() {
         {/* Product Image */}
         <View style={styles.imageContainer}>
           <Image
-            source={{ uri: product.image_url || DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+            source={getImageSource()}
             style={styles.productImage}
             defaultSource={{ uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+            onError={handleImageError}
+            onLoad={handleImageLoad}
+            onLoadStart={() => setImageLoading(true)}
+            resizeMode="cover"
           />
+          {imageLoading && (
+            <View style={styles.imageLoadingOverlay}>
+              <Text style={styles.imageLoadingText}>📷</Text>
+            </View>
+          )}
           {product.quantity === 0 && (
             <View style={styles.outOfStockOverlay}>
               <Text style={styles.outOfStockText}>Out of Stock</Text>
@@ -418,7 +442,21 @@ const styles = StyleSheet.create({
   productImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    backgroundColor: '#f3f4f6',
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageLoadingText: {
+    fontSize: 48,
+    color: '#9ca3af',
   },
   outOfStockOverlay: {
     position: 'absolute',

@@ -1,15 +1,15 @@
-// File: app/settings/index.tsx
+// File: app/settings/index.tsx - Fixed TypeScript errors
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
-    Alert,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
 
@@ -44,7 +44,7 @@ export default function SettingsScreen() {
       newMessages: true,
       promotions: false,
       newReviews: true,
-      lowStock: user?.type === 'seller',
+      lowStock: user?.user_type === 'seller',
     },
     privacy: {
       showOnlineStatus: true,
@@ -143,7 +143,7 @@ export default function SettingsScreen() {
                 newMessages: true,
                 promotions: false,
                 newReviews: true,
-                lowStock: user?.type === 'seller',
+                lowStock: user?.user_type === 'seller',
               },
               privacy: {
                 showOnlineStatus: true,
@@ -259,7 +259,7 @@ export default function SettingsScreen() {
             onValueChange={(value) => updateNotificationSetting('newReviews', value)}
           />
           
-          {user?.type === 'seller' && (
+          {user?.user_type === 'seller' && (
             <SettingItem
               icon="📉"
               title="Low Stock Alerts"

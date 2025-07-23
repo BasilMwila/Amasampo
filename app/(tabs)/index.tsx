@@ -1,8 +1,8 @@
 /* eslint-disable react-hooks/exhaustive-deps */
  
-// File: app/(tabs)/index.tsx - Fixed type issues and API integration
+// File: app/(tabs)/index.tsx - Fixed image handling
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -16,6 +16,12 @@ import {
 import { useAuth } from '../_layout';
 import { CATEGORIES } from '../constants/constants';
 import { apiService, type Product } from '../services/api';
+
+// Default images constant
+const DEFAULT_IMAGES = {
+  PRODUCT_PLACEHOLDER: 'https://via.placeholder.com/300x200/f3f4f6/9ca3af?text=No+Image',
+  USER_AVATAR: 'https://via.placeholder.com/100x100/f3f4f6/9ca3af?text=User'
+};
 
 export default function HomeScreen() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -87,6 +93,28 @@ export default function HomeScreen() {
   };
 
   const ProductCard = ({ product, isHorizontal = false }: { product: Product; isHorizontal?: boolean }) => {
+    const [imageError, setImageError] = useState(false);
+    const [imageLoading, setImageLoading] = useState(true);
+
+    const handleImageError = () => {
+      console.log('Image failed to load for product:', product.name);
+      setImageError(true);
+      setImageLoading(false);
+    };
+
+    const handleImageLoad = () => {
+      setImageLoading(false);
+      setImageError(false);
+    };
+
+    // Determine which image to show
+    const getImageSource = () => {
+      if (!product.image_url || imageError) {
+        return { uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER };
+      }
+      return { uri: product.image_url };
+    };
+
     return (
       <TouchableOpacity
         style={[styles.productCard, isHorizontal && styles.horizontalCard]}
@@ -94,9 +122,19 @@ export default function HomeScreen() {
       >
         <View style={styles.imageContainer}>
           <Image 
-            source={{ uri: product.image_url || '' }} 
+            source={getImageSource()}
             style={[styles.productImage, isHorizontal && styles.horizontalImage]} 
+            defaultSource={{ uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+            onError={handleImageError}
+            onLoad={handleImageLoad}
+            onLoadStart={() => setImageLoading(true)}
+            resizeMode="cover"
           />
+          {imageLoading && (
+            <View style={styles.imageLoadingOverlay}>
+              <Text style={styles.imageLoadingText}>📷</Text>
+            </View>
+          )}
           {product.is_on_sale === true && (
             <View style={styles.saleBadge}>
               <Text style={styles.saleBadgeText}>SALE</Text>
@@ -120,7 +158,7 @@ export default function HomeScreen() {
           
           <View style={styles.priceRow}>
             <View>
-              <Text style={styles.productPrice}>${product.price.toFixed(2)}</Text>
+              <Text style={styles.productPrice}>${product.price?.toFixed(2) || '0.00'}</Text>
               {product.original_price && product.original_price > 0 && (
                 <Text style={styles.originalPrice}>${product.original_price.toFixed(2)}</Text>
               )}
@@ -527,9 +565,25 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 150,
     borderRadius: 12,
+    backgroundColor: '#f3f4f6',
   },
   horizontalImage: {
     height: 120,
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageLoadingText: {
+    fontSize: 32,
+    color: '#9ca3af',
   },
   saleBadge: {
     position: 'absolute',

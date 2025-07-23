@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
-// app/(tabs)/product.tsx - Enhanced with image upload functionality
+// app/(tabs)/product.tsx - Enhanced with consistent image handling
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -9,7 +9,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
-  Platform, // <- Add this line
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -19,7 +19,7 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../_layout';
-import { COLORS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants/constants';
+import { COLORS, DEFAULT_IMAGES, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants/constants';
 import { apiService } from '../services/api';
 
 interface Category {
@@ -87,153 +87,153 @@ export default function AddProductScreen() {
     }
   };
 
-const pickImages = async () => {
-  try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-      aspect: [1, 1],
-      allowsEditing: false,
-    });
+  const pickImages = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        aspect: [1, 1],
+        allowsEditing: false,
+      });
 
-    if (!result.canceled && result.assets) {
-      const newImages: ProductImage[] = result.assets.map((asset, index) => {
+      if (!result.canceled && result.assets) {
+        const newImages: ProductImage[] = result.assets.map((asset, index) => {
+          // Get file extension from URI or default to jpg
+          const uriParts = asset.uri.split('.');
+          const fileExtension = uriParts[uriParts.length - 1] || 'jpg';
+          
+          return {
+            uri: asset.uri,
+            name: `product_image_${Date.now()}_${index}.${fileExtension}`,
+            type: `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`,
+          };
+        });
+
+        setProductImages(prev => [...prev, ...newImages].slice(0, 5)); // Max 5 images
+      }
+    } catch (error) {
+      console.error('Error picking images:', error);
+      Alert.alert('Error', 'Failed to pick images. Please try again.');
+    }
+  };
+
+  const takePhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'We need camera permissions to take photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        aspect: [1, 1],
+        allowsEditing: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        
         // Get file extension from URI or default to jpg
         const uriParts = asset.uri.split('.');
         const fileExtension = uriParts[uriParts.length - 1] || 'jpg';
         
-        return {
+        const newImage: ProductImage = {
           uri: asset.uri,
-          name: `product_image_${Date.now()}_${index}.${fileExtension}`,
+          name: `product_photo_${Date.now()}.${fileExtension}`,
           type: `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`,
         };
-      });
 
-      setProductImages(prev => [...prev, ...newImages].slice(0, 5)); // Max 5 images
+        setProductImages(prev => [...prev, newImage].slice(0, 5));
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
     }
-  } catch (error) {
-    console.error('Error picking images:', error);
-    Alert.alert('Error', 'Failed to pick images. Please try again.');
-  }
-};
-
-  const takePhoto = async () => {
-  try {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Required', 'We need camera permissions to take photos.');
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      quality: 0.8,
-      aspect: [1, 1],
-      allowsEditing: true,
-    });
-
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const asset = result.assets[0];
-      
-      // Get file extension from URI or default to jpg
-      const uriParts = asset.uri.split('.');
-      const fileExtension = uriParts[uriParts.length - 1] || 'jpg';
-      
-      const newImage: ProductImage = {
-        uri: asset.uri,
-        name: `product_photo_${Date.now()}.${fileExtension}`,
-        type: `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`,
-      };
-
-      setProductImages(prev => [...prev, newImage].slice(0, 5));
-    }
-  } catch (error) {
-    console.error('Error taking photo:', error);
-    Alert.alert('Error', 'Failed to take photo. Please try again.');
-  }
-};
+  };
 
   const removeImage = (index: number) => {
     setProductImages(prev => prev.filter((_, i) => i !== index));
   };
 
-const uploadImages = async (): Promise<string[]> => {
-  if (productImages.length === 0) return [];
+  const uploadImages = async (): Promise<string[]> => {
+    if (productImages.length === 0) return [];
 
-  setUploadingImages(true);
-  const uploadedUrls: string[] = [];
+    setUploadingImages(true);
+    const uploadedUrls: string[] = [];
 
-  try {
-    for (const image of productImages) {
-      // Create properly formatted FormData for React Native
-      const formData = new FormData();
+    try {
+      for (const image of productImages) {
+        // Create properly formatted FormData for React Native
+        const formData = new FormData();
+        
+        // Format the image object correctly for React Native
+        const imageObject = {
+          uri: Platform.OS === 'ios' ? image.uri.replace('file://', '') : image.uri,
+          type: image.type || 'image/jpeg',
+          name: image.name || `image_${Date.now()}.jpg`,
+        };
+
+        // Append the image with the correct format
+        formData.append('image', imageObject as any);
+
+        console.log('Uploading image:', imageObject);
+
+        const response = await apiService.uploadProductImage(formData);
+        uploadedUrls.push(response.image_url);
+      }
+
+      return uploadedUrls;
+    } catch (error: any) {
+      console.error('Error uploading images:', error);
       
-      // Format the image object correctly for React Native
-      const imageObject = {
-        uri: Platform.OS === 'ios' ? image.uri.replace('file://', '') : image.uri,
-        type: image.type || 'image/jpeg',
-        name: image.name || `image_${Date.now()}.jpg`,
-      };
-
-      // Append the image with the correct format
-      formData.append('image', imageObject as any);
-
-      console.log('Uploading image:', imageObject);
-
-      const response = await apiService.uploadProductImage(formData);
-      uploadedUrls.push(response.image_url);
+      // More specific error messages
+      if (error.message?.includes('Network')) {
+        throw new Error('Network error. Please check your connection and try again.');
+      } else if (error.message?.includes('size')) {
+        throw new Error('Image file is too large. Please choose a smaller image.');
+      } else if (error.message?.includes('format')) {
+        throw new Error('Invalid image format. Please use JPG or PNG images.');
+      } else {
+        throw new Error('Failed to upload images. Please try again.');
+      }
+    } finally {
+      setUploadingImages(false);
     }
+  };
 
-    return uploadedUrls;
-  } catch (error: any) {
-    console.error('Error uploading images:', error);
-    
-    // More specific error messages
-    if (error.message?.includes('Network')) {
-      throw new Error('Network error. Please check your connection and try again.');
-    } else if (error.message?.includes('size')) {
-      throw new Error('Image file is too large. Please choose a smaller image.');
-    } else if (error.message?.includes('format')) {
-      throw new Error('Invalid image format. Please use JPG or PNG images.');
-    } else {
-      throw new Error('Failed to upload images. Please try again.');
-    }
-  } finally {
-    setUploadingImages(false);
-  }
-};
-
-const testUploadConnection = async () => {
-  try {
-    console.log('Testing backend connection...');
-    console.log('API Base URL:', apiService.getBaseURL());
-    
-    const isConnected = await apiService.checkConnection();
-    console.log('Backend connection test:', isConnected ? 'SUCCESS' : 'FAILED');
-    
-    if (!isConnected) {
-      Alert.alert(
-        'Connection Error', 
-        'Cannot connect to the backend server. Please check your network connection and ensure the backend is running.',
-        [
-          { text: 'OK' },
-          { 
-            text: 'Check Settings', 
-            onPress: () => {
-              console.log('Current API URL:', apiService.getBaseURL());
-              Alert.alert('API Settings', `Current API URL: ${apiService.getBaseURL()}\n\nMake sure your backend server is running and accessible.`);
+  const testUploadConnection = async () => {
+    try {
+      console.log('Testing backend connection...');
+      console.log('API Base URL:', apiService.getBaseURL());
+      
+      const isConnected = await apiService.checkConnection();
+      console.log('Backend connection test:', isConnected ? 'SUCCESS' : 'FAILED');
+      
+      if (!isConnected) {
+        Alert.alert(
+          'Connection Error', 
+          'Cannot connect to the backend server. Please check your network connection and ensure the backend is running.',
+          [
+            { text: 'OK' },
+            { 
+              text: 'Check Settings', 
+              onPress: () => {
+                console.log('Current API URL:', apiService.getBaseURL());
+                Alert.alert('API Settings', `Current API URL: ${apiService.getBaseURL()}\n\nMake sure your backend server is running and accessible.`);
+              }
             }
-          }
-        ]
-      );
+          ]
+        );
+        return false;
+      }
+      return true;
+    } catch (error) {
+      console.error('Connection test failed:', error);
       return false;
     }
-    return true;
-  } catch (error) {
-    console.error('Connection test failed:', error);
-    return false;
-  }
-};
+  };
 
   const resetForm = () => {
     setName('');
@@ -278,72 +278,72 @@ const testUploadConnection = async () => {
     return true;
   };
 
- const handleSubmit = async () => {
-  if (!validateForm()) return;
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
 
-  // Test connection first
-  const isConnected = await testUploadConnection();
-  if (!isConnected) {
-    Alert.alert('Connection Error', 'Please check your connection and try again.');
-    return;
-  }
-
-  setLoading(true);
-  
-  try {
-    // Upload images first
-    const imageUrls = await uploadImages();
-
-    const productData = {
-      name: name.trim(),
-      description: description.trim(),
-      price: parseFloat(price),
-      quantity: parseInt(quantity),
-      category_id: categoryId!,
-      image_url: imageUrls.length > 0 ? imageUrls[0] : undefined,
-      images: imageUrls.length > 1 ? imageUrls : undefined,
-    };
-
-    const response = await apiService.createProduct(productData);
-    
-    Alert.alert(
-      'Success!',
-      SUCCESS_MESSAGES.PRODUCT_CREATED,
-      [
-        {
-          text: 'Add Another',
-          onPress: resetForm,
-        },
-        {
-          text: 'Done',
-          onPress: resetForm,
-          style: 'default',
-        },
-      ]
-    );
-    
-  } catch (error: any) {
-    console.error('Failed to create product:', error);
-    
-    let errorMessage = ERROR_MESSAGES.UNKNOWN_ERROR;
-    
-    if (error.message) {
-      if (error.message.includes('Validation')) {
-        errorMessage = 'Please check your product information and try again.';
-      } else if (error.message.includes('Network')) {
-        errorMessage = ERROR_MESSAGES.NETWORK_ERROR;
-      } else if (error.message.includes('Unauthorized')) {
-        errorMessage = ERROR_MESSAGES.UNAUTHORIZED;
-      } else {
-        errorMessage = error.message;
-      }
+    // Test connection first
+    const isConnected = await testUploadConnection();
+    if (!isConnected) {
+      Alert.alert('Connection Error', 'Please check your connection and try again.');
+      return;
     }
+
+    setLoading(true);
     
-    Alert.alert('Error', errorMessage);
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      // Upload images first
+      const imageUrls = await uploadImages();
+
+      const productData = {
+        name: name.trim(),
+        description: description.trim(),
+        price: parseFloat(price),
+        quantity: parseInt(quantity),
+        category_id: categoryId!,
+        image_url: imageUrls.length > 0 ? imageUrls[0] : undefined,
+        images: imageUrls.length > 1 ? imageUrls : undefined,
+      };
+
+      const response = await apiService.createProduct(productData);
+      
+      Alert.alert(
+        'Success!',
+        SUCCESS_MESSAGES.PRODUCT_CREATED,
+        [
+          {
+            text: 'Add Another',
+            onPress: resetForm,
+          },
+          {
+            text: 'Done',
+            onPress: resetForm,
+            style: 'default',
+          },
+        ]
+      );
+      
+    } catch (error: any) {
+      console.error('Failed to create product:', error);
+      
+      let errorMessage = ERROR_MESSAGES.UNKNOWN_ERROR;
+      
+      if (error.message) {
+        if (error.message.includes('Validation')) {
+          errorMessage = 'Please check your product information and try again.';
+        } else if (error.message.includes('Network')) {
+          errorMessage = ERROR_MESSAGES.NETWORK_ERROR;
+        } else if (error.message.includes('Unauthorized')) {
+          errorMessage = ERROR_MESSAGES.UNAUTHORIZED;
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const showImageOptions = () => {
     Alert.alert(
@@ -377,6 +377,60 @@ const testUploadConnection = async () => {
       'Services': '🔧',
     };
     return iconMap[categoryName] || '📦';
+  };
+
+  // Image component with error handling
+  const ProductImagePreview = ({ image, index }: { image: ProductImage; index: number }) => {
+    const [imageError, setImageError] = useState(false);
+    const [imageLoading, setImageLoading] = useState(true);
+
+    const handleImageError = () => {
+      console.log('Preview image failed to load:', image.name);
+      setImageError(true);
+      setImageLoading(false);
+    };
+
+    const handleImageLoad = () => {
+      setImageLoading(false);
+      setImageError(false);
+    };
+
+    const getImageSource = () => {
+      if (imageError) {
+        return { uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER };
+      }
+      return { uri: image.uri };
+    };
+
+    return (
+      <View style={styles.imageContainer}>
+        <Image 
+          source={getImageSource()} 
+          style={styles.productImage}
+          defaultSource={{ uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+          onError={handleImageError}
+          onLoad={handleImageLoad}
+          onLoadStart={() => setImageLoading(true)}
+          resizeMode="cover"
+        />
+        {imageLoading && !imageError && (
+          <View style={styles.imageLoadingOverlay}>
+            <Text style={styles.imageLoadingText}>📷</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.removeImageButton}
+          onPress={() => removeImage(index)}
+        >
+          <Text style={styles.removeImageText}>×</Text>
+        </TouchableOpacity>
+        {index === 0 && (
+          <View style={styles.primaryImageBadge}>
+            <Text style={styles.primaryImageText}>Main</Text>
+          </View>
+        )}
+      </View>
+    );
   };
 
   if (user?.user_type !== 'seller') {
@@ -414,20 +468,7 @@ const testUploadConnection = async () => {
               <Text style={styles.label}>Product Images ({productImages.length}/5)</Text>
               <View style={styles.imagesContainer}>
                 {productImages.map((image, index) => (
-                  <View key={index} style={styles.imageContainer}>
-                    <Image source={{ uri: image.uri }} style={styles.productImage} />
-                    <TouchableOpacity
-                      style={styles.removeImageButton}
-                      onPress={() => removeImage(index)}
-                    >
-                      <Text style={styles.removeImageText}>×</Text>
-                    </TouchableOpacity>
-                    {index === 0 && (
-                      <View style={styles.primaryImageBadge}>
-                        <Text style={styles.primaryImageText}>Main</Text>
-                      </View>
-                    )}
-                  </View>
+                  <ProductImagePreview key={index} image={image} index={index} />
                 ))}
                 
                 {productImages.length < 5 && (
@@ -551,7 +592,11 @@ const testUploadConnection = async () => {
               <Text style={styles.previewTitle}>Preview</Text>
               <View style={styles.previewCard}>
                 {productImages.length > 0 && (
-                  <Image source={{ uri: productImages[0].uri }} style={styles.previewImage} />
+                  <Image 
+                    source={{ uri: productImages[0].uri }} 
+                    style={styles.previewImage}
+                    defaultSource={{ uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER }}
+                  />
                 )}
                 <Text style={styles.previewName}>
                   {name || 'Product name will appear here'}
@@ -685,6 +730,21 @@ const styles = StyleSheet.create({
     height: 100,
     borderRadius: 12,
     backgroundColor: COLORS.BORDER,
+  },
+  imageLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  imageLoadingText: {
+    fontSize: 24,
+    color: '#9ca3af',
   },
   removeImageButton: {
     position: 'absolute',
