@@ -1,116 +1,57 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
+import { apiService } from '../services/api';
 
 interface Message {
   id: number;
-  text: string;
-  senderId: number;
-  senderName: string;
-  timestamp: string;
-  type: 'text' | 'image' | 'product';
-  status: 'sent' | 'delivered' | 'read';
+  message_text: string;
+  sender_id: number;
+  receiver_id: number;
+  sender_name?: string;
+  receiver_name?: string;
+  created_at: string;
+  message_type: 'text' | 'image' | 'product';
+  is_read: boolean;
 }
 
 interface ChatUser {
   id: number;
   name: string;
-  isOnline: boolean;
-  lastSeen?: string;
-  shopName?: string;
-  type: 'buyer' | 'seller';
+  shop_name?: string;
+  avatar_url?: string;
 }
-
-const mockUsers: ChatUser[] = [
-  { id: 1, name: 'John Smith', isOnline: true, shopName: 'Smith Farm Market', type: 'seller' },
-  { id: 2, name: 'Mary Johnson', isOnline: false, lastSeen: '2 hours ago', shopName: "Mary's Bakery", type: 'seller' },
-  { id: 3, name: 'Bob Wilson', isOnline: true, type: 'buyer' },
-];
-
-const mockMessages: Message[] = [
-  {
-    id: 1,
-    text: 'Hi! I&apos;m interested in your organic apples. Are they still available?',
-    senderId: 3,
-    senderName: 'Bob Wilson',
-    timestamp: '2024-01-15T10:30:00Z',
-    type: 'text',
-    status: 'read',
-  },
-  {
-    id: 2,
-    text: 'Hello! Yes, we have plenty of organic apples available. They&apos;re freshly picked this morning.',
-    senderId: 1,
-    senderName: 'John Smith',
-    timestamp: '2024-01-15T10:32:00Z',
-    type: 'text',
-    status: 'read',
-  },
-  {
-    id: 3,
-    text: 'Great! How much for 5 pounds? And can I pick them up today?',
-    senderId: 3,
-    senderName: 'Bob Wilson',
-    timestamp: '2024-01-15T10:35:00Z',
-    type: 'text',
-    status: 'read',
-  },
-  {
-    id: 4,
-    text: 'That would be $14.95 for 5 pounds. Yes, you can pick them up anytime between 9 AM and 6 PM. We&apos;re located at 123 Farm Road.',
-    senderId: 1,
-    senderName: 'John Smith',
-    timestamp: '2024-01-15T10:38:00Z',
-    type: 'text',
-    status: 'read',
-  },
-  {
-    id: 5,
-    text: 'Perfect! I&apos;ll be there around 2 PM today. Should I bring cash or do you accept card?',
-    senderId: 3,
-    senderName: 'Bob Wilson',
-    timestamp: '2024-01-15T10:40:00Z',
-    type: 'text',
-    status: 'delivered',
-  },
-];
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [otherUser, setOtherUser] = useState<ChatUser | null>(null);
-  const [isTyping, setIsTyping] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
-    // Find the other user
-    const foundUser = mockUsers.find(u => u.id === parseInt(id as string));
-    setOtherUser(foundUser || null);
-
-    // Filter messages for this conversation
-    const conversationMessages = mockMessages.filter(
-      msg => 
-        (msg.senderId === user?.id && parseInt(id as string) === parseInt(id as string)) ||
-        (msg.senderId === parseInt(id as string) && user?.id === user?.id)
-    );
-    setMessages(conversationMessages);
-  }, [id, user]);
+    if (id) {
+      loadConversation();
+    }
+  }, [id]);
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -121,39 +62,80 @@ export default function ChatScreen() {
     }
   }, [messages]);
 
-  const sendMessage = () => {
-    if (!newMessage.trim() || !user || !otherUser) return;
+  const loadConversation = async () => {
+    try {
+      setLoading(true);
+      
+      const response = await apiService.request<{
+        messages: Message[];
+        other_user: ChatUser;
+        pagination: any;
+      }>(`/messages/conversation/${id}`);
+      
+      setMessages(response.messages || []);
+      setOtherUser(response.other_user);
+      
+      console.log('✅ Loaded conversation:', {
+        messagesCount: response.messages?.length || 0,
+        otherUser: response.other_user?.name
+      });
+      
+    } catch (error: any) {
+      console.error('❌ Failed to load conversation:', error);
+      
+      // Show user-friendly error
+      Alert.alert(
+        'Error',
+        'Failed to load conversation. Please try again.',
+        [
+          { text: 'Go Back', onPress: () => router.back() },
+          { text: 'Retry', onPress: loadConversation }
+        ]
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const message: Message = {
-      id: Date.now(),
-      text: newMessage.trim(),
-      senderId: user.id,
-      senderName: user.name,
-      timestamp: new Date().toISOString(),
-      type: 'text',
-      status: 'sent',
-    };
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !user || !otherUser || sending) return;
 
-    setMessages(prevMessages => [...prevMessages, message]);
+    const messageText = newMessage.trim();
     setNewMessage('');
+    setSending(true);
 
-    // Simulate message delivery
-    setTimeout(() => {
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === message.id ? { ...msg, status: 'delivered' } : msg
-        )
-      );
-    }, 1000);
+    try {
+      const response = await apiService.request<{
+        message: string;
+        data: Message;
+      }>('/messages/send', {
+        method: 'POST',
+        body: JSON.stringify({
+          recipient_id: otherUser.id,
+          message_text: messageText,
+          message_type: 'text'
+        })
+      });
 
-    // Simulate read receipt
-    setTimeout(() => {
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
-          msg.id === message.id ? { ...msg, status: 'read' } : msg
-        )
+      // Add the new message to the list
+      setMessages(prevMessages => [...prevMessages, response.data]);
+
+      console.log('✅ Message sent successfully');
+      
+    } catch (error: any) {
+      console.error('❌ Failed to send message:', error);
+      
+      // Restore the message text so user can try again
+      setNewMessage(messageText);
+      
+      Alert.alert(
+        'Error',
+        'Failed to send message. Please try again.',
+        [{ text: 'OK' }]
       );
-    }, 3000);
+    } finally {
+      setSending(false);
+    }
   };
 
   const formatTime = (timestamp: string) => {
@@ -165,13 +147,9 @@ export default function ChatScreen() {
     });
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'sent': return '✓';
-      case 'delivered': return '✓✓';
-      case 'read': return '✓✓';
-      default: return '';
-    }
+  const getStatusIcon = (message: Message) => {
+    if (message.sender_id !== user?.id) return '';
+    return message.is_read ? '✓✓' : '✓';
   };
 
   const handleCall = () => {
@@ -204,7 +182,7 @@ export default function ChatScreen() {
   };
 
   const renderMessage = ({ item }: { item: Message }) => {
-    const isMyMessage = item.senderId === user?.id;
+    const isMyMessage = item.sender_id === user?.id;
     
     return (
       <View style={[
@@ -219,21 +197,21 @@ export default function ChatScreen() {
             styles.messageText,
             isMyMessage ? styles.myMessageText : styles.otherMessageText,
           ]}>
-            {item.text}
+            {item.message_text}
           </Text>
           <View style={styles.messageFooter}>
             <Text style={[
               styles.messageTime,
               isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
             ]}>
-              {formatTime(item.timestamp)}
+              {formatTime(item.created_at)}
             </Text>
             {isMyMessage && (
               <Text style={[
                 styles.messageStatus,
-                item.status === 'read' && styles.messageStatusRead,
+                item.is_read && styles.messageStatusRead,
               ]}>
-                {getStatusIcon(item.status)}
+                {getStatusIcon(item)}
               </Text>
             )}
           </View>
@@ -241,6 +219,17 @@ export default function ChatScreen() {
       </View>
     );
   };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>Loading conversation...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!otherUser) {
     return (
@@ -280,16 +269,13 @@ export default function ChatScreen() {
             <View style={styles.userDetails}>
               <Text style={styles.userName}>{otherUser.name}</Text>
               <View style={styles.statusContainer}>
-                <View style={[
-                  styles.statusDot,
-                  { backgroundColor: otherUser.isOnline ? '#10b981' : '#d1d5db' }
-                ]} />
+                <View style={[styles.statusDot, { backgroundColor: '#d1d5db' }]} />
                 <Text style={styles.userStatus}>
-                  {otherUser.isOnline ? 'Online' : `Last seen ${otherUser.lastSeen || 'recently'}`}
+                  Recently active
                 </Text>
               </View>
-              {otherUser.shopName && (
-                <Text style={styles.shopName}>🏪 {otherUser.shopName}</Text>
+              {otherUser.shop_name && (
+                <Text style={styles.shopName}>🏪 {otherUser.shop_name}</Text>
               )}
             </View>
           </View>
@@ -316,14 +302,14 @@ export default function ChatScreen() {
           style={styles.messagesList}
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}
+          ListEmptyComponent={
+            <View style={styles.emptyMessages}>
+              <Text style={styles.emptyMessagesText}>
+                Start a conversation with {otherUser.name}
+              </Text>
+            </View>
+          }
         />
-
-        {/* Typing Indicator */}
-        {isTyping && (
-          <View style={styles.typingContainer}>
-            <Text style={styles.typingText}>{otherUser.name} is typing...</Text>
-          </View>
-        )}
 
         {/* Message Input */}
         <View style={styles.inputContainer}>
@@ -337,6 +323,7 @@ export default function ChatScreen() {
               maxLength={1000}
               returnKeyType="send"
               onSubmitEditing={sendMessage}
+              editable={!sending}
             />
             <TouchableOpacity style={styles.attachButton}>
               <Text style={styles.attachButtonText}>📎</Text>
@@ -345,12 +332,16 @@ export default function ChatScreen() {
           <TouchableOpacity 
             style={[
               styles.sendButton,
-              newMessage.trim() ? styles.sendButtonActive : styles.sendButtonInactive
+              (newMessage.trim() && !sending) ? styles.sendButtonActive : styles.sendButtonInactive
             ]}
             onPress={sendMessage}
-            disabled={!newMessage.trim()}
+            disabled={!newMessage.trim() || sending}
           >
-            <Text style={styles.sendButtonText}>➤</Text>
+            {sending ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.sendButtonText}>➤</Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -362,6 +353,16 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f8f9fa',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#6b7280',
   },
   header: {
     flexDirection: 'row',
@@ -444,6 +445,17 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     padding: 16,
+    flexGrow: 1,
+  },
+  emptyMessages: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyMessagesText: {
+    fontSize: 16,
+    color: '#6b7280',
+    textAlign: 'center',
   },
   messageContainer: {
     marginBottom: 16,
@@ -505,15 +517,6 @@ const styles = StyleSheet.create({
   },
   messageStatusRead: {
     color: '#10b981',
-  },
-  typingContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  typingText: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontStyle: 'italic',
   },
   inputContainer: {
     flexDirection: 'row',
