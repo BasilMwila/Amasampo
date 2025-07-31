@@ -1,7 +1,7 @@
-// app/services/api.ts - Complete API service with TypeScript errors fixed
+// app/services/api.ts - Complete API service with TypeScript errors fixed + ALL original methods preserved
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Types - All original types preserved
+// Types - All original types preserved + fixes
 export interface User {
   id: number;
   name: string;
@@ -112,27 +112,46 @@ export interface OrderItem {
   subtotal: number;
 }
 
+// Fixed Message interface with both field names
 export interface Message {
   id: number;
   sender_id: number;
-  receiver_id: number;
-  message: string;
+  receiver_id?: number;
+  message?: string;  // Keep for backward compatibility
+  message_text?: string;  // New field name from backend
   message_type: string;
   is_read: boolean;
   created_at: string;
   updated_at: string;
   sender_name?: string;
   receiver_name?: string;
+  conversation_id?: number;
+  uuid?: string;
+  status?: string;
 }
 
-export interface Conversation {
+// Fixed ChatUser interface - now properly exported
+export interface ChatUser {
   id: number;
-  participant_id: number;
-  participant_name: string;
-  participant_type: string;
+  name: string;
   shop_name?: string;
-  last_message: string;
-  last_message_time: string;
+  avatar_url?: string;
+}
+
+// Fixed Conversation interface to match backend response
+export interface Conversation {
+  other_user: {
+    id: number;
+    name: string;
+    shop_name?: string;
+    avatar_url?: string;
+  };
+  last_message: {
+    text: string;
+    type: string;
+    time: string;
+    sender_id: number;
+  };
   unread_count: number;
 }
 
@@ -378,8 +397,8 @@ class ApiService {
     };
   }
 
-  // Generic API request method
-  private async request<T>(
+  // Generic API request method - MADE PUBLIC to fix TypeScript errors
+  async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
@@ -927,7 +946,7 @@ class ApiService {
     return { order: processedOrder };
   }
 
-  // Message methods - ALL ORIGINAL FUNCTIONALITY PRESERVED
+  // **FIXED MESSAGE METHODS** - All original functionality + new methods for chat
   async getConversations(): Promise<{ conversations: Conversation[] }> {
     console.log('💬 Fetching conversations');
     
@@ -937,49 +956,127 @@ class ApiService {
     return response;
   }
 
-  async getMessages(userId: number, page: number = 1): Promise<{ messages: Message[]; pagination?: PaginationInfo }> {
-    console.log('💬 Fetching messages with user:', userId);
+  async getConversationMessages(userId: number, page: number = 1): Promise<{ 
+    messages: Message[]; 
+    other_user: ChatUser; 
+    conversation_id: number;
+    pagination?: PaginationInfo 
+  }> {
+    console.log('💬 Fetching conversation with user:', userId);
     
-    const response = await this.request<{ messages: Message[]; pagination?: PaginationInfo }>(`/messages/${userId}?page=${page}`);
+    const response = await this.request<{ 
+      messages: Message[]; 
+      other_user: ChatUser; 
+      conversation_id: number;
+      pagination?: PaginationInfo 
+    }>(`/messages/conversation/${userId}?page=${page}&limit=50`);
     
-    console.log(`✅ Fetched ${response.messages.length} messages`);
+    console.log(`✅ Fetched ${response.messages.length} conversation messages`);
     return response;
   }
 
-  async sendMessage(receiverId: number, message: string, messageType: string = 'text'): Promise<{ message: Message }> {
-    console.log('💬 Sending message to:', receiverId);
+  async sendConversationMessage(recipientId: number, messageText: string, messageType: string = 'text'): Promise<{ 
+    message: string; 
+    data: Message 
+  }> {
+    console.log('💬 Sending conversation message to:', recipientId);
     
-    const response = await this.request<{ message: Message }>('/messages', {
+    const response = await this.request<{ 
+      message: string; 
+      data: Message 
+    }>('/messages/send', {
       method: 'POST',
       body: JSON.stringify({
-        receiver_id: receiverId,
-        message,
+        recipient_id: recipientId,
+        message_text: messageText,
         message_type: messageType,
       }),
     });
     
-    console.log('✅ Message sent');
+    console.log('✅ Conversation message sent');
     return response;
   }
 
-  async markMessageAsRead(messageId: number): Promise<void> {
+  async getUnreadMessageCount(): Promise<{ unread_count: number }> {
+    console.log('💬 Fetching unread message count');
+    
+    const response = await this.request<{ unread_count: number }>('/messages/unread-count');
+    
+    console.log(`✅ Unread messages: ${response.unread_count}`);
+    return response;
+  }
+
+  async markConversationAsRead(userId: number): Promise<{ message: string; updated_count: number }> {
+    console.log('👁️ Marking conversation as read with user:', userId);
+    
+    const response = await this.request<{ message: string; updated_count: number }>(`/messages/conversation/${userId}/read`, {
+      method: 'PUT',
+    });
+    
+    console.log('✅ Conversation marked as read');
+    return response;
+  }
+
+  async markMessageAsRead(messageId: number): Promise<{ message: string }> {
     console.log('👁️ Marking message as read:', messageId);
     
-    await this.request(`/messages/${messageId}/read`, {
+    const response = await this.request<{ message: string }>(`/messages/${messageId}/read`, {
       method: 'PUT',
     });
     
     console.log('✅ Message marked as read');
+    return response;
   }
 
-  async deleteMessage(messageId: number): Promise<void> {
+  async deleteMessage(messageId: number): Promise<{ message: string }> {
     console.log('🗑️ Deleting message:', messageId);
     
-    await this.request(`/messages/${messageId}`, {
+    const response = await this.request<{ message: string }>(`/messages/${messageId}`, {
       method: 'DELETE',
     });
     
     console.log('✅ Message deleted');
+    return response;
+  }
+
+  async sendProductMessage(productId: number, messageText: string): Promise<{ 
+    message: string; 
+    data: Message 
+  }> {
+    console.log('💬 Sending product message for product:', productId);
+    
+    const response = await this.request<{ 
+      message: string; 
+      data: Message 
+    }>(`/messages/product/${productId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        message_text: messageText,
+      }),
+    });
+    
+    console.log('✅ Product message sent');
+    return response;
+  }
+
+  // Keep old methods for backward compatibility but mark as deprecated
+  /**
+   * @deprecated Use getConversationMessages instead
+   */
+  async getMessages(userId: number, page: number = 1): Promise<{ messages: Message[]; pagination?: PaginationInfo }> {
+    console.log('💬 Fetching messages with user (deprecated method):', userId);
+    const response = await this.getConversationMessages(userId, page);
+    return { messages: response.messages, pagination: response.pagination };
+  }
+
+  /**
+   * @deprecated Use sendConversationMessage instead
+   */
+  async sendMessage(receiverId: number, message: string, messageType: string = 'text'): Promise<{ message: Message }> {
+    console.log('💬 Sending message (deprecated method) to:', receiverId);
+    
+    const response = await this.sendConversationMessage(receiverId, message, messageType);
+    return { message: response.data };
   }
 
   // Review methods - ALL ORIGINAL FUNCTIONALITY PRESERVED
