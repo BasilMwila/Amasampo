@@ -1,6 +1,6 @@
 // app/(tabs)/messages.tsx - Updated with real API integration
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -117,7 +117,7 @@ export default function MessagesScreen() {
           <Image
             source={{ uri: conversation.other_user.avatar_url }}
             style={styles.avatar}
-            defaultSource={{ uri: DEFAULT_IMAGES.AVATAR_PLACEHOLDER }}
+            defaultSource={{ uri: DEFAULT_IMAGES.USER_AVATAR }}
           />
         ) : (
           <View style={styles.avatarPlaceholder}>

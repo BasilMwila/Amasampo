@@ -4,7 +4,6 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Image,
   SafeAreaView,
@@ -77,91 +76,8 @@ export default function HomeScreen() {
     router.push(`/products/${product.id}` as any);
   };
 
-  // Enhanced message seller function with product context
-  const handleMessageSeller = async (product: Product) => {
-    if (!user || user.user_type !== 'buyer') {
-      Alert.alert('Access Denied', 'Only buyers can message sellers.');
-      return;
-    }
-
-    if (product.seller_id === user.id) {
-      Alert.alert('Cannot Message', 'You cannot message yourself about your own product.');
-      return;
-    }
-
-    try {
-      console.log('💬 Initiating product message for:', product.name);
-      
-      // Show loading state
-      Alert.alert(
-        'Send Message',
-        `Send a message to ${product.seller_name} about "${product.name}"?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Send Message', 
-            onPress: async () => {
-              try {
-                // Send product reference message
-                const response = await apiService.request(`/messages/product/${product.id}`, {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    message_text: `Hi! I'm interested in your product "${product.name}". Is it still available?`
-                  })
-                });
-
-                console.log('✅ Product message sent successfully');
-                
-                // Navigate to the chat with the seller
-                router.push(`/chat/${product.seller_id}` as any);
-                
-                // Show success message
-                setTimeout(() => {
-                  Alert.alert(
-                    'Message Sent!',
-                    `Your message about "${product.name}" has been sent to ${product.seller_name}.`
-                  );
-                }, 500);
-                
-              } catch (error: any) {
-                console.error('❌ Failed to send product message:', error);
-                Alert.alert(
-                  'Message Failed',
-                  'Failed to send message. Please try again.',
-                  [{ text: 'OK' }]
-                );
-              }
-            }
-          }
-        ]
-      );
-    } catch (error: any) {
-      console.error('❌ Error in handleMessageSeller:', error);
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    }
-  };
-
-  // Quick message function without confirmation dialog
-  const handleQuickMessageSeller = async (product: Product) => {
-    if (!user || user.user_type !== 'buyer') return;
-    if (product.seller_id === user.id) return;
-
-    try {
-      // Send the product reference message directly
-      await apiService.request(`/messages/product/${product.id}`, {
-        method: 'POST',
-        body: JSON.stringify({
-          message_text: `Hi! I'm interested in this product. Is it available?`
-        })
-      });
-
-      // Navigate to chat
-      router.push(`/chat/${product.seller_id}` as any);
-      
-    } catch (error: any) {
-      console.error('❌ Quick message failed:', error);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
-    }
+  const handleMessageSeller = (sellerId: number) => {
+    router.push(`/chat/${sellerId}` as any);
   };
 
   const handleSearch = () => {
@@ -253,28 +169,15 @@ export default function HomeScreen() {
           </View>
 
           {user?.user_type === 'buyer' && product.seller_id !== user.id && (
-            <View style={styles.productActions}>
-              <TouchableOpacity
-                style={styles.messageButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleMessageSeller(product);
-                }}
-              >
-                <Text style={styles.messageButtonIcon}>💬</Text>
-                <Text style={styles.messageButtonText}>Message Seller</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.quickMessageButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleQuickMessageSeller(product);
-                }}
-              >
-                <Text style={styles.quickMessageButtonText}>Quick Chat</Text>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              style={styles.messageButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleMessageSeller(product.seller_id);
+              }}
+            >
+              <Text style={styles.messageButtonText}>Message Seller</Text>
+            </TouchableOpacity>
           )}
         </View>
       </TouchableOpacity>
@@ -754,41 +657,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#6b7280',
   },
-  // Enhanced messaging styles
-  productActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-  },
   messageButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#3b82f6',
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-  },
-  messageButtonIcon: {
-    fontSize: 14,
-    marginRight: 4,
+    alignSelf: 'flex-start',
+    marginTop: 8,
   },
   messageButtonText: {
     color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  quickMessageButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#3b82f6',
-    backgroundColor: 'transparent',
-  },
-  quickMessageButtonText: {
-    color: '#3b82f6',
     fontSize: 12,
     fontWeight: '600',
   },
