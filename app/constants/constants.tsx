@@ -101,6 +101,14 @@ export const ORDER_STATUSES = {
   REFUNDED: 'refunded'
 } as const;
 
+export const LIMITS = {
+  MESSAGE_LENGTH: 1000,
+  PRODUCT_NAME_LENGTH: 100,
+  PRODUCT_DESCRIPTION_LENGTH: 1000,
+  USER_NAME_LENGTH: 50,
+  SHOP_NAME_LENGTH: 100,
+};
+
 export const PAYMENT_STATUSES = {
   PENDING: 'pending',
   PAID: 'paid',
@@ -112,8 +120,21 @@ export const MESSAGE_TYPES = {
   TEXT: 'text',
   IMAGE: 'image',
   ORDER: 'order',
-  PRODUCT: 'product'
+  PRODUCT: 'product',
+  SYSTEM: 'system',
+  PRODUCT_REFERENCE: 'product_reference',
+  NOTIFICATION: 'notification',
+  REVIEW: 'review',
 } as const;
+
+export const ORDER_STATUS = {
+  PENDING: 'pending',
+  CONFIRMED: 'confirmed',
+  PROCESSING: 'processing',
+  SHIPPED: 'shipped',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
+};
 
 export const NOTIFICATION_TYPES = {
   ORDER: 'order',

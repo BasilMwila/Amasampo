@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
@@ -15,30 +16,102 @@ import {
   View,
 } from 'react-native';
 import { useAuth } from '../_layout';
-import { apiService } from '../services/api';
+import { COLORS, DEFAULT_IMAGES } from '../constants/constants';
+import { apiService, type ChatUser, type Message } from '../services/api';
 
-interface Message {
-  id: number;
-  message_text: string;
-  sender_id: number;
-  receiver_id: number;
-  sender_name?: string;
-  receiver_name?: string;
-  created_at: string;
-  message_type: 'text' | 'image' | 'product';
-  is_read: boolean;
+// Enhanced Message interface with product data
+interface EnhancedMessage extends Message {
+  product_data?: {
+    id: number;
+    name: string;
+    price: number;
+    image_url?: string;
+    seller_name?: string;
+    category_name?: string;
+    is_active: boolean;
+    quantity: number;
+  };
+  text_content?: string;
 }
 
-interface ChatUser {
-  id: number;
-  name: string;
-  shop_name?: string;
-  avatar_url?: string;
-}
+// Product Card Component for Chat
+const ProductChatCard = ({ product, onPress }: { 
+  product: any; 
+  onPress: () => void; 
+}) => {
+  const [imageError, setImageError] = useState(false);
+
+  const handleImageError = () => {
+    setImageError(true);
+  };
+
+  const getImageSource = () => {
+    if (!product.image_url || imageError) {
+      return { uri: DEFAULT_IMAGES.PRODUCT_PLACEHOLDER };
+    }
+    return { uri: product.image_url };
+  };
+
+  return (
+    <TouchableOpacity style={styles.productCard} onPress={onPress}>
+      <View style={styles.productCardHeader}>
+        <Text style={styles.productCardLabel}>🏷️ Product Reference</Text>
+        <View style={[
+          styles.productStatus, 
+          product.is_active ? styles.productActive : styles.productInactive
+        ]}>
+          <Text style={[
+            styles.productStatusText,
+            product.is_active ? styles.productActiveText : styles.productInactiveText
+          ]}>
+            {product.is_active ? 'Available' : 'Unavailable'}
+          </Text>
+        </View>
+      </View>
+      
+      <View style={styles.productCardContent}>
+        <Image 
+          source={getImageSource()}
+          style={styles.productCardImage}
+          onError={handleImageError}
+          resizeMode="cover"
+        />
+        
+        <View style={styles.productCardInfo}>
+          <Text style={styles.productCardName} numberOfLines={2}>
+            {product.name}
+          </Text>
+          
+          <Text style={styles.productCardPrice}>
+            ${product.price?.toFixed(2) || '0.00'}
+          </Text>
+          
+          {product.quantity !== undefined && (
+            <Text style={styles.productCardQuantity}>
+              {product.quantity > 0 ? `${product.quantity} available` : 'Out of stock'}
+            </Text>
+          )}
+          
+          {product.category_name && (
+            <Text style={styles.productCardCategory}>
+              📂 {product.category_name}
+            </Text>
+          )}
+        </View>
+      </View>
+      
+      <View style={styles.productCardFooter}>
+        <Text style={styles.productCardAction}>
+          👆 Tap to view product details
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<EnhancedMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [otherUser, setOtherUser] = useState<ChatUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,11 +139,7 @@ export default function ChatScreen() {
     try {
       setLoading(true);
       
-      const response = await apiService.request<{
-        messages: Message[];
-        other_user: ChatUser;
-        pagination: any;
-      }>(`/messages/conversation/${id}`);
+      const response = await apiService.getConversationMessages(Number(id));
       
       setMessages(response.messages || []);
       setOtherUser(response.other_user);
@@ -83,7 +152,6 @@ export default function ChatScreen() {
     } catch (error: any) {
       console.error('❌ Failed to load conversation:', error);
       
-      // Show user-friendly error
       Alert.alert(
         'Error',
         'Failed to load conversation. Please try again.',
@@ -105,19 +173,12 @@ export default function ChatScreen() {
     setSending(true);
 
     try {
-      const response = await apiService.request<{
-        message: string;
-        data: Message;
-      }>('/messages/send', {
-        method: 'POST',
-        body: JSON.stringify({
-          recipient_id: otherUser.id,
-          message_text: messageText,
-          message_type: 'text'
-        })
-      });
+      const response = await apiService.sendConversationMessage(
+        otherUser.id, 
+        messageText, 
+        'text'
+      );
 
-      // Add the new message to the list
       setMessages(prevMessages => [...prevMessages, response.data]);
 
       console.log('✅ Message sent successfully');
@@ -125,7 +186,6 @@ export default function ChatScreen() {
     } catch (error: any) {
       console.error('❌ Failed to send message:', error);
       
-      // Restore the message text so user can try again
       setNewMessage(messageText);
       
       Alert.alert(
@@ -138,6 +198,10 @@ export default function ChatScreen() {
     }
   };
 
+  const handleProductPress = (productId: number) => {
+    router.push(`/products/${productId}` as any);
+  };
+
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
     return date.toLocaleTimeString('en-US', { 
@@ -147,41 +211,12 @@ export default function ChatScreen() {
     });
   };
 
-  const getStatusIcon = (message: Message) => {
+  const getStatusIcon = (message: EnhancedMessage) => {
     if (message.sender_id !== user?.id) return '';
     return message.is_read ? '✓✓' : '✓';
   };
 
-  const handleCall = () => {
-    Alert.alert(
-      'Call Feature',
-      'Voice calling feature will be available soon!',
-      [{ text: 'OK' }]
-    );
-  };
-
-  const handleVideoCall = () => {
-    Alert.alert(
-      'Video Call Feature',
-      'Video calling feature will be available soon!',
-      [{ text: 'OK' }]
-    );
-  };
-
-  const handleMoreOptions = () => {
-    Alert.alert(
-      'More Options',
-      'Choose an action',
-      [
-        { text: 'Block User', style: 'destructive' },
-        { text: 'Report User', style: 'destructive' },
-        { text: 'Clear Chat' },
-        { text: 'Cancel', style: 'cancel' },
-      ]
-    );
-  };
-
-  const renderMessage = ({ item }: { item: Message }) => {
+  const renderMessage = ({ item }: { item: EnhancedMessage }) => {
     const isMyMessage = item.sender_id === user?.id;
     
     return (
@@ -189,33 +224,78 @@ export default function ChatScreen() {
         styles.messageContainer,
         isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer,
       ]}>
-        <View style={[
-          styles.messageBubble,
-          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
-        ]}>
-          <Text style={[
-            styles.messageText,
-            isMyMessage ? styles.myMessageText : styles.otherMessageText,
+        {/* Product Reference Message */}
+        {item.message_type === 'product_reference' && item.product_data && (
+          <View style={[
+            styles.productMessageBubble,
+            isMyMessage ? styles.myProductMessageBubble : styles.otherProductMessageBubble,
           ]}>
-            {item.message_text}
-          </Text>
-          <View style={styles.messageFooter}>
-            <Text style={[
-              styles.messageTime,
-              isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
-            ]}>
-              {formatTime(item.created_at)}
-            </Text>
-            {isMyMessage && (
-              <Text style={[
-                styles.messageStatus,
-                item.is_read && styles.messageStatusRead,
-              ]}>
-                {getStatusIcon(item)}
-              </Text>
+            <ProductChatCard 
+              product={item.product_data} 
+              onPress={() => handleProductPress(item.product_data!.id)}
+            />
+            
+            {/* Text content if available */}
+            {item.text_content && (
+              <View style={styles.productMessageText}>
+                <Text style={[
+                  styles.messageText,
+                  isMyMessage ? styles.myMessageText : styles.otherMessageText,
+                ]}>
+                  {item.text_content}
+                </Text>
+              </View>
             )}
+            
+            <View style={styles.messageFooter}>
+              <Text style={[
+                styles.messageTime,
+                isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
+              ]}>
+                {formatTime(item.created_at)}
+              </Text>
+              {isMyMessage && (
+                <Text style={[
+                  styles.messageStatus,
+                  item.is_read && styles.messageStatusRead,
+                ]}>
+                  {getStatusIcon(item)}
+                </Text>
+              )}
+            </View>
           </View>
-        </View>
+        )}
+        
+        {/* Regular Text Message */}
+        {item.message_type !== 'product_reference' && (
+          <View style={[
+            styles.messageBubble,
+            isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble,
+          ]}>
+            <Text style={[
+              styles.messageText,
+              isMyMessage ? styles.myMessageText : styles.otherMessageText,
+            ]}>
+              {item.message_text || item.message || ''}
+            </Text>
+            <View style={styles.messageFooter}>
+              <Text style={[
+                styles.messageTime,
+                isMyMessage ? styles.myMessageTime : styles.otherMessageTime,
+              ]}>
+                {formatTime(item.created_at)}
+              </Text>
+              {isMyMessage && (
+                <Text style={[
+                  styles.messageStatus,
+                  item.is_read && styles.messageStatusRead,
+                ]}>
+                  {getStatusIcon(item)}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
       </View>
     );
   };
@@ -224,7 +304,7 @@ export default function ChatScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#3b82f6" />
+          <ActivityIndicator size="large" color={COLORS.PRIMARY} />
           <Text style={styles.loadingText}>Loading conversation...</Text>
         </View>
       </SafeAreaView>
@@ -262,17 +342,15 @@ export default function ChatScreen() {
           <View style={styles.userInfo}>
             <View style={styles.avatar}>
               <Text style={styles.avatarText}>
-                {otherUser.name.split(' ').map(n => n[0]).join('')}
+                {otherUser.name.split(' ').map((n: string) => n[0]).join('')}
               </Text>
             </View>
             
             <View style={styles.userDetails}>
               <Text style={styles.userName}>{otherUser.name}</Text>
               <View style={styles.statusContainer}>
-                <View style={[styles.statusDot, { backgroundColor: '#d1d5db' }]} />
-                <Text style={styles.userStatus}>
-                  Recently active
-                </Text>
+                <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+                <Text style={styles.userStatus}>Active</Text>
               </View>
               {otherUser.shop_name && (
                 <Text style={styles.shopName}>🏪 {otherUser.shop_name}</Text>
@@ -280,17 +358,23 @@ export default function ChatScreen() {
             </View>
           </View>
 
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.headerButton} onPress={handleCall}>
-              <Text style={styles.headerButtonText}>📞</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={handleVideoCall}>
-              <Text style={styles.headerButtonText}>📹</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.headerButton} onPress={handleMoreOptions}>
-              <Text style={styles.headerButtonText}>⋮</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity 
+            style={styles.headerButton} 
+            onPress={() => {
+              Alert.alert(
+                'Chat Options',
+                'Choose an action',
+                [
+                  { text: 'View Profile', onPress: () => router.push(`/users/${otherUser.id}` as any) },
+                  { text: 'Block User', style: 'destructive' },
+                  { text: 'Report User', style: 'destructive' },
+                  { text: 'Cancel', style: 'cancel' },
+                ]
+              );
+            }}
+          >
+            <Text style={styles.headerButtonText}>⋮</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Messages List */}
@@ -304,8 +388,12 @@ export default function ChatScreen() {
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
             <View style={styles.emptyMessages}>
+              <Text style={styles.emptyMessagesIcon}>💬</Text>
               <Text style={styles.emptyMessagesText}>
                 Start a conversation with {otherUser.name}
+              </Text>
+              <Text style={styles.emptyMessagesSubtext}>
+                Send a message or share a product to get started
               </Text>
             </View>
           }
@@ -352,7 +440,7 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: COLORS.BACKGROUND,
   },
   loadingContainer: {
     flex: 1,
@@ -362,20 +450,20 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomColor: COLORS.BORDER,
   },
   backIcon: {
     fontSize: 24,
-    color: '#3b82f6',
+    color: COLORS.PRIMARY,
     marginRight: 16,
   },
   userInfo: {
@@ -387,13 +475,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   avatarText: {
-    color: '#ffffff',
+    color: COLORS.CARD,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -403,7 +491,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   statusContainer: {
     flexDirection: 'row',
@@ -418,22 +506,18 @@ const styles = StyleSheet.create({
   },
   userStatus: {
     fontSize: 12,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
   shopName: {
     fontSize: 12,
-    color: '#3b82f6',
+    color: COLORS.PRIMARY,
     marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
   },
   headerButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#f3f4f6',
+    backgroundColor: COLORS.BACKGROUND,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -451,10 +535,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyMessagesIcon: {
+    fontSize: 48,
+    marginBottom: 16,
   },
   emptyMessagesText: {
-    fontSize: 16,
-    color: '#6b7280',
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptyMessagesSubtext: {
+    fontSize: 14,
+    color: COLORS.TEXT_SECONDARY,
     textAlign: 'center',
   },
   messageContainer: {
@@ -473,17 +569,127 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   myMessageBubble: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     borderBottomRightRadius: 4,
   },
   otherMessageBubble: {
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderBottomLeftRadius: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+  },
+  // Product message styles
+  productMessageBubble: {
+    maxWidth: '90%',
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  myProductMessageBubble: {
+    backgroundColor: COLORS.CARD,
+    borderBottomRightRadius: 4,
+  },
+  otherProductMessageBubble: {
+    backgroundColor: COLORS.CARD,
+    borderBottomLeftRadius: 4,
+  },
+  productCard: {
+    backgroundColor: COLORS.CARD,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+  },
+  productCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: COLORS.BACKGROUND,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.BORDER,
+  },
+  productCardLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.TEXT_SECONDARY,
+  },
+  productStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  productActive: {
+    backgroundColor: '#10B981',
+  },
+  productInactive: {
+    backgroundColor: '#EF4444',
+  },
+  productStatusText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  productActiveText: {
+    color: '#ffffff',
+  },
+  productInactiveText: {
+    color: '#ffffff',
+  },
+  productCardContent: {
+    flexDirection: 'row',
+    padding: 12,
+  },
+  productCardImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    backgroundColor: COLORS.BACKGROUND,
+    marginRight: 12,
+  },
+  productCardInfo: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  productCardName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.TEXT_PRIMARY,
+    marginBottom: 4,
+  },
+  productCardPrice: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.PRIMARY,
+    marginBottom: 2,
+  },
+  productCardQuantity: {
+    fontSize: 11,
+    color: COLORS.TEXT_SECONDARY,
+    marginBottom: 2,
+  },
+  productCardCategory: {
+    fontSize: 11,
+    color: COLORS.TEXT_MUTED,
+  },
+  productCardFooter: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: COLORS.BACKGROUND,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.BORDER,
+  },
+  productCardAction: {
+    fontSize: 11,
+    color: COLORS.PRIMARY,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  productMessageText: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   messageText: {
     fontSize: 16,
@@ -493,7 +699,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   otherMessageText: {
-    color: '#1a1a1a',
+    color: COLORS.TEXT_PRIMARY,
   },
   messageFooter: {
     flexDirection: 'row',
@@ -501,6 +707,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     marginTop: 4,
     gap: 4,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
   },
   messageTime: {
     fontSize: 11,
@@ -509,22 +717,22 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.7)',
   },
   otherMessageTime: {
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
   },
   messageStatus: {
     fontSize: 11,
     color: 'rgba(255, 255, 255, 0.7)',
   },
   messageStatusRead: {
-    color: '#10b981',
+    color: '#10B981',
   },
   inputContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#ffffff',
+    backgroundColor: COLORS.CARD,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: COLORS.BORDER,
     alignItems: 'flex-end',
     gap: 8,
   },
@@ -532,7 +740,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    backgroundColor: '#f3f4f6',
+    backgroundColor: COLORS.BACKGROUND,
     borderRadius: 20,
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -543,6 +751,7 @@ const styles = StyleSheet.create({
     maxHeight: 100,
     minHeight: 36,
     textAlignVertical: 'center',
+    color: COLORS.TEXT_PRIMARY,
   },
   attachButton: {
     marginLeft: 8,
@@ -559,10 +768,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendButtonActive: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
   },
   sendButtonInactive: {
-    backgroundColor: '#d1d5db',
+    backgroundColor: COLORS.TEXT_MUTED,
   },
   sendButtonText: {
     fontSize: 18,
@@ -576,11 +785,11 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 18,
-    color: '#6b7280',
+    color: COLORS.TEXT_SECONDARY,
     marginBottom: 20,
   },
   backButton: {
-    backgroundColor: '#3b82f6',
+    backgroundColor: COLORS.PRIMARY,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
