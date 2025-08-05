@@ -1,17 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // File: app/checkout/index.tsx
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
-    Alert,
-    FlatList,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  FlatList,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useAuth } from '../_layout';
 
