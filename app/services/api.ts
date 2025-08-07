@@ -260,7 +260,7 @@ class ApiService {
 
   constructor() {
     // Use your actual backend URL here
-    this.baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.116:3000/api';
+    this.baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.0.184:3000/api';
     console.log('🌐 API Service initialized with base URL:', this.baseURL);
   }
 

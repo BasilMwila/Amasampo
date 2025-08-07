@@ -15,6 +15,13 @@ import {
 } from 'react-native';
 import { useAuth } from '../_layout';
 
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  type: string; // Add this line to include the 'type' property
+}
+
 interface OrderItem {
   id: number;
   productId: number;
@@ -92,14 +99,14 @@ export default function CheckoutScreen() {
   const [paymentMethods] = useState<PaymentMethod[]>(mockPaymentMethods);
   const [addresses] = useState<DeliveryAddress[]>(mockAddresses);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod | null>(
-    mockPaymentMethods.find(pm => pm.isDefault) || null
+    mockPaymentMethods.find(method => method.isDefault) || null
   );
+  const { user } = (useAuth() as { user: User | null });
   const [selectedAddress, setSelectedAddress] = useState<DeliveryAddress | null>(
     mockAddresses.find(addr => addr.isDefault) || null
   );
   const [deliveryInstructions, setDeliveryInstructions] = useState('');
   const [loading, setLoading] = useState(false);
-  const { user } = useAuth();
   const router = useRouter();
 
   const getSubtotal = () => {
