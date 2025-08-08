@@ -205,7 +205,7 @@ export default function CartScreen() {
           {item.shop_name && (
             <Text style={styles.shopName}>{item.shop_name}</Text>
           )}
-          <Text style={styles.itemPrice}>${item.price.toFixed(2)} each</Text>
+          <Text style={styles.itemPrice}>${(item.price || 0).toFixed(2)} each</Text>
           
           <View style={styles.quantityContainer}>
             <TouchableOpacity
@@ -243,7 +243,7 @@ export default function CartScreen() {
 
         <View style={styles.itemActions}>
           <Text style={styles.itemTotal}>
-            ${(item.price * item.quantity).toFixed(2)}
+            ${((item.price || 0) * item.quantity).toFixed(2)}
           </Text>
           <TouchableOpacity
             style={[styles.removeButton, isUpdating && styles.removeButtonDisabled]}

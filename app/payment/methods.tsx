@@ -12,6 +12,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { useAuth } from '../_layout';
 
 interface PaymentMethod {
@@ -59,6 +60,8 @@ const mockPaymentMethods: PaymentMethod[] = [
 export default function PaymentMethodsScreen() {
   const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(mockPaymentMethods);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showLencoTest, setShowLencoTest] = useState(false);
+  const [testAmount, setTestAmount] = useState('10.00');
   const { user } = useAuth();
   const router = useRouter();
 
@@ -94,6 +97,265 @@ export default function PaymentMethodsScreen() {
         },
       ]
     );
+  };
+
+  const generateLencoTestHTML = (): string => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Lenco Payment Test</title>
+          <style>
+              body {
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  margin: 0;
+                  padding: 20px;
+                  background-color: #f8f9fa;
+                  line-height: 1.6;
+              }
+              .container {
+                  max-width: 400px;
+                  margin: 0 auto;
+                  background: white;
+                  padding: 30px;
+                  border-radius: 12px;
+                  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+              }
+              .header {
+                  text-align: center;
+                  margin-bottom: 20px;
+              }
+              .sandbox-notice {
+                  background-color: #fff3cd;
+                  border: 1px solid #ffeaa7;
+                  color: #856404;
+                  padding: 12px;
+                  border-radius: 8px;
+                  margin-bottom: 20px;
+                  font-size: 14px;
+              }
+              .amount {
+                  font-size: 28px;
+                  font-weight: bold;
+                  color: #2c3e50;
+                  margin: 10px 0;
+              }
+              .test-button {
+                  width: 100%;
+                  color: white;
+                  border: none;
+                  padding: 16px;
+                  border-radius: 8px;
+                  font-size: 16px;
+                  font-weight: bold;
+                  cursor: pointer;
+                  margin: 10px 0;
+                  transition: opacity 0.3s;
+              }
+              .test-button:hover {
+                  opacity: 0.8;
+              }
+              .card-button {
+                  background-color: #3498db;
+              }
+              .mobile-button {
+                  background-color: #27ae60;
+              }
+              .test-info {
+                  background-color: #e8f4fd;
+                  padding: 15px;
+                  border-radius: 8px;
+                  margin: 15px 0;
+                  font-size: 14px;
+                  color: #0c5460;
+              }
+              .credentials {
+                  background-color: #f8f9fa;
+                  padding: 15px;
+                  border-radius: 8px;
+                  margin-bottom: 20px;
+                  font-family: monospace;
+                  font-size: 12px;
+                  color: #495057;
+              }
+              .loading {
+                  text-align: center;
+                  color: #6c757d;
+                  margin-top: 20px;
+                  display: none;
+              }
+          </style>
+          <script src="https://pay.sandbox.lenco.co/js/v1/inline.js"></script>
+      </head>
+      <body>
+          <div class="container">
+              <div class="header">
+                  <h2>🧪 Lenco Payment Test</h2>
+                  <div class="amount">$${testAmount} USD</div>
+              </div>
+
+              <div class="sandbox-notice">
+                  <strong>⚠️ SANDBOX MODE</strong><br>
+                  This is a test environment. No real money will be charged.
+              </div>
+
+              <div class="credentials">
+                  <strong>Sandbox Credentials:</strong><br>
+                  Public Key: pub-88dd921c0ecd73590459a1dd5a9343c77db0f3c344f222b9<br>
+                  API Key: 993bed87f9d5925...<br>
+                  Base URL: https://sandbox.lenco.co/access/v2/
+              </div>
+
+              <div class="test-info">
+                  <strong>💳 Test Card Numbers:</strong><br>
+                  • Success: <strong>4242424242424242</strong><br>
+                  • Declined: <strong>4000000000000002</strong><br>
+                  • CVC: Any 3 digits<br>
+                  • Expiry: Any future date<br><br>
+                  
+                  <strong>📱 MTN Test Numbers:</strong><br>
+                  • Success: <strong>0961111111</strong><br>
+                  • Not enough funds: <strong>0962222222</strong><br>
+                  • Limit exceeded: <strong>0963333333</strong><br>
+                  • Unauthorized: <strong>0964444444</strong><br>
+                  • Timeout: <strong>0966666666</strong><br><br>
+                  
+                  <strong>📱 Airtel Test Numbers:</strong><br>
+                  • Success: <strong>0971111111</strong><br>
+                  • Incorrect PIN: <strong>0972222222</strong><br>
+                  • Invalid amount: <strong>0973333333</strong><br>
+                  • Not enough funds: <strong>0975555555</strong><br>
+                  • Timeout: <strong>0977777777</strong>
+              </div>
+              
+              <button class="test-button card-button" onclick="testCardPayment()">
+                  💳 Test Card Payment
+              </button>
+              
+              <button class="test-button mobile-button" onclick="testMobileMoneyPayment()">
+                  📱 Test Mobile Money
+              </button>
+
+              <div class="loading" id="loading">
+                  Processing payment...
+              </div>
+          </div>
+
+          <script>
+              function showLoading() {
+                  document.getElementById('loading').style.display = 'block';
+              }
+
+              function testCardPayment() {
+                  showLoading();
+                  const reference = 'TEST_CARD_' + Date.now();
+                  
+                  window.LencoPay.getPaid({
+                      key: "pub-88dd921c0ecd73590459a1dd5a9343c77db0f3c344f222b9",
+                      email: "${user?.email || 'test@amasampo.com'}",
+                      reference: reference,
+                      amount: ${parseFloat(testAmount)},
+                      currency: "USD",
+                      label: "Amasampo Test Payment - Card",
+                      channels: ["card"],
+                      bearer: "customer",
+                      onSuccess: function(response) {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                              type: 'SUCCESS',
+                              method: 'card',
+                              data: response
+                          }));
+                      },
+                      onClose: function() {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                              type: 'CLOSE',
+                              method: 'card'
+                          }));
+                      },
+                      onError: function(error) {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                              type: 'ERROR',
+                              method: 'card',
+                              data: error
+                          }));
+                      }
+                  });
+              }
+
+              function testMobileMoneyPayment() {
+                  showLoading();
+                  const reference = 'TEST_MM_' + Date.now();
+                  
+                  window.LencoPay.getPaid({
+                      key: "pub-88dd921c0ecd73590459a1dd5a9343c77db0f3c344f222b9",
+                      email: "${user?.email || 'test@amasampo.com'}",
+                      reference: reference,
+                      amount: ${parseFloat(testAmount)},
+                      currency: "NGN", 
+                      label: "Amasampo Test Payment - Mobile Money",
+                      channels: ["mobile_money"],
+                      bearer: "customer",
+                      onSuccess: function(response) {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                              type: 'SUCCESS',
+                              method: 'mobile_money',
+                              data: response
+                          }));
+                      },
+                      onClose: function() {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                              type: 'CLOSE',
+                              method: 'mobile_money'
+                          }));
+                      },
+                      onError: function(error) {
+                          window.ReactNativeWebView.postMessage(JSON.stringify({
+                              type: 'ERROR',
+                              method: 'mobile_money', 
+                              data: error
+                          }));
+                      }
+                  });
+              }
+          </script>
+      </body>
+      </html>
+    `;
+  };
+
+  const handleLencoTestMessage = (message: any) => {
+    try {
+      const data = JSON.parse(message.nativeEvent.data);
+      console.log('🧪 Lenco test result:', data);
+
+      setShowLencoTest(false);
+
+      switch (data.type) {
+        case 'SUCCESS':
+          Alert.alert(
+            '✅ Payment Test Successful!',
+            `Method: ${data.method}\nReference: ${data.data.reference}\n\nThis was a sandbox test. No real money was charged.`,
+            [
+              { text: 'Great!', onPress: () => console.log('Test completed successfully') }
+            ]
+          );
+          break;
+
+        case 'CLOSE':
+          Alert.alert('Test Cancelled', `${data.method} payment test was cancelled.`);
+          break;
+
+        case 'ERROR':
+          Alert.alert('Test Error', `Error in ${data.method} payment: ${JSON.stringify(data.data)}`);
+          break;
+      }
+    } catch (error) {
+      console.error('Error parsing Lenco test result:', error);
+      setShowLencoTest(false);
+      Alert.alert('Error', 'Failed to process test payment result.');
+    }
   };
 
   const getPaymentIcon = (type: string, brand?: string) => {
@@ -207,6 +469,38 @@ export default function PaymentMethodsScreen() {
       </View>
 
       <ScrollView style={styles.content}>
+        {/* Lenco Testing Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🧪 Lenco Payment Testing</Text>
+          <Text style={styles.sectionSubtitle}>
+            Test Lenco payment integration with sandbox credentials (no real money charged)
+          </Text>
+          
+          <View style={styles.lencoTestCard}>
+            <View style={styles.testAmountSection}>
+              <Text style={styles.testLabel}>Test Amount ($USD)</Text>
+              <TextInput
+                style={styles.testAmountInput}
+                value={testAmount}
+                onChangeText={setTestAmount}
+                placeholder="10.00"
+                keyboardType="decimal-pad"
+              />
+            </View>
+            
+            <TouchableOpacity
+              style={styles.lencoTestButton}
+              onPress={() => setShowLencoTest(true)}
+            >
+              <Text style={styles.lencoTestButtonText}>🚀 Launch Lenco Payment Test</Text>
+            </TouchableOpacity>
+            
+            <Text style={styles.testNote}>
+              💡 This will open the Lenco payment widget in sandbox mode for testing both card and mobile money payments.
+            </Text>
+          </View>
+        </View>
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your Payment Methods</Text>
           <Text style={styles.sectionSubtitle}>
@@ -257,6 +551,34 @@ export default function PaymentMethodsScreen() {
           Alert.alert('Success', 'Payment method added successfully');
         }}
       />
+
+      {/* Lenco Test Modal */}
+      <Modal
+        visible={showLencoTest}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowLencoTest(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowLencoTest(false)}>
+              <Text style={styles.modalCloseButton}>✕ Close</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Lenco Payment Test</Text>
+            <View style={{ width: 80 }} />
+          </View>
+          
+          <WebView
+            source={{ html: generateLencoTestHTML() }}
+            style={styles.lencoWebView}
+            onMessage={handleLencoTestMessage}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            mixedContentMode="compatibility"
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -745,5 +1067,56 @@ const styles = StyleSheet.create({
   },
   halfInput: {
     flex: 1,
+  },
+  // Lenco Testing Styles
+  lencoTestCard: {
+    backgroundColor: '#fff3cd',
+    borderColor: '#ffeaa7',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+  },
+  testAmountSection: {
+    marginBottom: 16,
+  },
+  testLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#856404',
+    marginBottom: 8,
+  },
+  testAmountInput: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#ffeaa7',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: '#856404',
+  },
+  lencoTestButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  lencoTestButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  testNote: {
+    fontSize: 12,
+    color: '#856404',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  lencoWebView: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
   },
 });

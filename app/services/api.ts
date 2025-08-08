@@ -58,8 +58,8 @@ export interface CartItem {
   product_id: number;
   quantity: number;
   price: number;
-  product_name: string;
-  product_image?: string;
+  name: string; // Fixed property name to match backend
+  image_url?: string; // Fixed property name to match backend
   seller_name: string;
   shop_name?: string;
   available_quantity: number;
@@ -257,15 +257,48 @@ export interface PaginationInfo {
 class ApiService {
   private baseURL: string;
   private defaultTimeout: number = 30000;
-
-  constructor() {
-    // Use your actual backend URL here
-    this.baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.0.184:3000/api';
-    console.log('🌐 API Service initialized with base URL:', this.baseURL);
+  
+  private getBaseURL(): string {
+    // Use environment variable if available, otherwise use updated IP
+    const envUrl = process.env.EXPO_PUBLIC_API_URL;
+    const defaultUrl = 'http://192.168.0.184:3000'; // Updated IP
+    
+    console.log('🔧 Environment EXPO_PUBLIC_API_URL:', envUrl);
+    console.log('🔧 Using API URL:', envUrl || defaultUrl);
+    
+    return envUrl || defaultUrl;
   }
 
-  // Get base URL for debugging
-  getBaseURL(): string {
+  constructor() {
+    // Use dynamic URL detection with fallbacks
+    const baseUrl = this.getBaseURL();
+    this.baseURL = `${baseUrl}/api`;
+    console.log('🌐 API Service initialized with base URL:', this.baseURL);
+    
+    // Test connectivity on initialization
+    this.testConnectivity();
+  }
+  
+  // Test backend connectivity
+  private async testConnectivity(): Promise<void> {
+    try {
+      const response = await fetch(`${this.getBaseURL()}/api/health`, { 
+        method: 'GET',
+        timeout: 5000 
+      } as any);
+      
+      if (response.ok) {
+        console.log('✅ Backend connectivity test passed');
+      } else {
+        console.warn('⚠️ Backend connectivity test failed:', response.status);
+      }
+    } catch (error) {
+      console.warn('⚠️ Backend not reachable. Make sure your server is running at:', this.getBaseURL());
+    }
+  }
+
+  // Get configured base URL for debugging
+  getConfiguredBaseURL(): string {
     return this.baseURL;
   }
 
@@ -382,7 +415,11 @@ class ApiService {
   private processCartItemData(item: any): CartItem {
     return {
       ...item,
-      product_image: this.processImageUrl(item.product_image),
+      price: parseFloat(item.price) || 0,
+      subtotal: parseFloat(item.subtotal) || 0,
+      quantity: parseInt(item.quantity) || 0,
+      available_quantity: parseInt(item.available_quantity) || 0,
+      image_url: this.processImageUrl(item.image_url),
     };
   }
 
@@ -536,6 +573,87 @@ class ApiService {
   async getCurrentUser(): Promise<{ user: User }> {
     const response = await this.request<{ user: User }>('/auth/me');
     return response;
+  }
+
+  // Authenticated request method (alias for request with explicit authentication requirement)
+  async authenticatedRequest<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    return await this.request<T>(endpoint, options);
+  }
+
+  // Register push notification token
+  async registerPushToken(pushToken: string, deviceType?: string, deviceId?: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const response = await this.authenticatedRequest<{ success: boolean; message: string }>('/notifications/register-token', {
+        method: 'POST',
+        body: JSON.stringify({
+          pushToken,
+          deviceType: deviceType || 'mobile',
+          deviceId: deviceId || 'default'
+        })
+      });
+      
+      return response;
+    } catch (error: any) {
+      console.error('Failed to register push token:', error);
+      throw error;
+    }
+  }
+
+  // Get notifications
+  async getNotifications(page = 1, limit = 20, unreadOnly = false): Promise<any> {
+    try {
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString(),
+        unread_only: unreadOnly.toString()
+      });
+
+      const response = await this.authenticatedRequest<any>(`/notifications?${params}`);
+      return response;
+    } catch (error: any) {
+      console.error('Failed to get notifications:', error);
+      throw error;
+    }
+  }
+
+  // Get unread notification count
+  async getUnreadNotificationCount(): Promise<{ unread_count: number }> {
+    try {
+      const response = await this.authenticatedRequest<{ unread_count: number }>('/notifications/unread-count');
+      return response;
+    } catch (error: any) {
+      console.error('Failed to get unread notification count:', error);
+      throw error;
+    }
+  }
+
+  // Mark notification as read
+  async markNotificationRead(notificationId: number): Promise<any> {
+    try {
+      const response = await this.authenticatedRequest<any>(`/notifications/${notificationId}/read`, {
+        method: 'PUT'
+      });
+      return response;
+    } catch (error: any) {
+      console.error('Failed to mark notification as read:', error);
+      throw error;
+    }
+  }
+
+  // Mark all notifications as read
+  async markAllNotificationsRead(): Promise<any> {
+    try {
+      const response = await this.authenticatedRequest<any>('/notifications/mark-all-read', {
+        method: 'PUT'
+      });
+      return response;
+    } catch (error: any) {
+      console.error('Failed to mark all notifications as read:', error);
+      throw error;
+    }
   }
 
   async forgotPassword(email: string): Promise<{ message: string }> {
@@ -810,6 +928,19 @@ class ApiService {
   }
 
   // Cart methods - ALL ORIGINAL FUNCTIONALITY PRESERVED + IMAGE PROCESSING
+  // Updated getCart method to match backend response structure
+  async getCart(): Promise<{ cart_items: CartItem[]; summary: any }> {
+    console.log('🛒 Fetching cart...');
+    
+    const response = await this.request<{ cart_items: CartItem[]; summary: any }>('/cart');
+    
+    // Process image URLs in cart items
+    const processedItems = response.cart_items?.map(item => this.processCartItemData(item)) || [];
+    
+    console.log(`✅ Fetched ${processedItems.length} cart items`);
+    return { cart_items: processedItems, summary: response.summary };
+  }
+
   async getCartItems(): Promise<{ items: CartItem[] }> {
     console.log('🛒 Fetching cart items...');
     
@@ -834,36 +965,36 @@ class ApiService {
   async addToCart(productId: number, quantity: number): Promise<{ item: CartItem }> {
     console.log('🛒 Adding to cart:', { productId, quantity });
     
-    const response = await this.request<{ item: CartItem }>('/cart', {
+    const response = await this.request<{ cart_item: CartItem }>('/cart/add', {
       method: 'POST',
       body: JSON.stringify({ product_id: productId, quantity }),
     });
 
     // Process image URL
-    const processedItem = this.processCartItemData(response.item);
+    const processedItem = this.processCartItemData(response.cart_item);
     
-    console.log('✅ Added to cart:', processedItem.product_name);
+    console.log('✅ Added to cart:', processedItem.name);
     return { item: processedItem };
   }
 
   async updateCartItem(productId: number, quantity: number): Promise<{ item: CartItem }> {
     console.log('🛒 Updating cart item:', { productId, quantity });
     
-    const response = await this.request<{ item: CartItem }>(`/cart/${productId}`, {
+    const response = await this.request<{ cart_item: CartItem }>(`/cart/update/${productId}`, {
       method: 'PUT',
       body: JSON.stringify({ quantity }),
     });
 
-    const processedItem = this.processCartItemData(response.item);
+    const processedItem = this.processCartItemData(response.cart_item);
     
-    console.log('✅ Updated cart item:', processedItem.product_name);
+    console.log('✅ Updated cart item:', processedItem.name);
     return { item: processedItem };
   }
 
   async removeFromCart(productId: number): Promise<void> {
     console.log('🛒 Removing from cart:', productId);
     
-    await this.request(`/cart/${productId}`, {
+    await this.request(`/cart/remove/${productId}`, {
       method: 'DELETE',
     });
     
@@ -873,7 +1004,7 @@ class ApiService {
   async clearCart(): Promise<void> {
     console.log('🛒 Clearing cart...');
     
-    await this.request('/cart', {
+    await this.request('/cart/clear', {
       method: 'DELETE',
     });
     
@@ -881,19 +1012,6 @@ class ApiService {
   }
 
   // Order methods - ALL ORIGINAL FUNCTIONALITY PRESERVED + IMAGE PROCESSING
-  async createOrder(orderData: any): Promise<{ order: Order }> {
-    console.log('📋 Creating order');
-    
-    const response = await this.request<{ order: Order }>('/orders', {
-      method: 'POST',
-      body: JSON.stringify(orderData),
-    });
-
-    const processedOrder = this.processOrderData(response.order);
-    
-    console.log('✅ Order created:', processedOrder.order_number);
-    return { order: processedOrder };
-  }
 
   async getOrders(type: 'buyer' | 'seller' = 'buyer', page: number = 1): Promise<{ orders: Order[]; pagination?: PaginationInfo }> {
     console.log('📋 Fetching orders:', type);
@@ -1310,54 +1428,7 @@ class ApiService {
     return response;
   }
 
-  // Notification methods - ALL ORIGINAL FUNCTIONALITY PRESERVED
-  async getNotifications(page: number = 1): Promise<{ notifications: Notification[]; pagination?: PaginationInfo }> {
-    console.log('🔔 Fetching notifications');
-    
-    const response = await this.request<{ notifications: Notification[]; pagination?: PaginationInfo }>(`/notifications?page=${page}`);
-    
-    console.log(`✅ Fetched ${response.notifications.length} notifications`);
-    return response;
-  }
-
-  async getUnreadNotificationCount(): Promise<{ count: number }> {
-    console.log('🔔 Fetching unread notification count');
-    
-    const response = await this.request<{ count: number }>('/notifications/unread-count');
-    
-    console.log(`✅ Unread notifications: ${response.count}`);
-    return response;
-  }
-
-  async markNotificationAsRead(id: number): Promise<void> {
-    console.log('👁️ Marking notification as read:', id);
-    
-    await this.request(`/notifications/${id}/read`, {
-      method: 'PUT',
-    });
-    
-    console.log('✅ Notification marked as read');
-  }
-
-  async markAllNotificationsAsRead(): Promise<void> {
-    console.log('👁️ Marking all notifications as read');
-    
-    await this.request('/notifications/mark-all-read', {
-      method: 'PUT',
-    });
-    
-    console.log('✅ All notifications marked as read');
-  }
-
-  async deleteNotification(id: number): Promise<void> {
-    console.log('🗑️ Deleting notification:', id);
-    
-    await this.request(`/notifications/${id}`, {
-      method: 'DELETE',
-    });
-    
-    console.log('✅ Notification deleted');
-  }
+  // Legacy notification methods removed to prevent duplicates - using newer implementations above
 
   // Image upload methods - ALL ORIGINAL FUNCTIONALITY PRESERVED + IMPROVED
   async uploadProductImage(formData: FormData): Promise<{ image_url: string }> {
@@ -1498,6 +1569,99 @@ class ApiService {
     const response = await this.request<{ analytics: any }>(`/analytics/product/${productId}?period=${period}`);
     
     console.log('✅ Product analytics fetched');
+    return response;
+  }
+
+  // Order and Payment methods for checkout flow
+  async createOrder(orderData: {
+    delivery_address: string;
+    payment_method: 'mobile_money' | 'card';
+    phone_number?: string;
+    provider?: string;
+  }): Promise<{ data: { id: number; order_number: string; total: string } }> {
+    console.log('🛒 Creating order from cart...');
+    
+    const response = await this.request<{ data: { id: number; order_number: string; total: string } }>('/orders/from-cart', {
+      method: 'POST',
+      body: JSON.stringify(orderData),
+    });
+    
+    console.log('✅ Order created:', response.data.order_number);
+    return response;
+  }
+
+  async getPaymentProviders(): Promise<{ providers: Array<{ code: string; name: string; logo: string; country: string }> }> {
+    console.log('💳 Fetching payment providers...');
+    
+    const response = await this.request<{ providers: Array<{ code: string; name: string; logo: string; country: string }> }>('/payment/providers');
+    
+    console.log('✅ Payment providers fetched');
+    return response;
+  }
+
+  async initializeMobileMoneyPayment(paymentData: {
+    order_id: number;
+    operator: string;
+    phone: string;
+    country: string;
+  }): Promise<{ data: { reference: string; collection_id: string; status: string; instructions: string } }> {
+    console.log('📱 Initializing mobile money payment...');
+    
+    const response = await this.request<{ data: { reference: string; collection_id: string; status: string; instructions: string } }>('/payment/initialize/mobile-money', {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+    
+    console.log('✅ Mobile money payment initialized');
+    return response;
+  }
+
+  async initializeCardPayment(paymentData: {
+    order_id: number;
+    success_url: string;
+    cancel_url: string;
+  }): Promise<{ data: { payment_reference: string; widget_config: any; widget_script: string } }> {
+    console.log('💳 Initializing card payment...');
+    
+    const response = await this.request<{ data: { payment_reference: string; widget_config: any; widget_script: string } }>('/payment/initialize/card', {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
+    
+    console.log('✅ Card payment initialized');
+    return response;
+  }
+
+  async submitMobileMoneyOTP(collectionId: string, otp: string): Promise<{ data: { status: string; reference: string; message: string } }> {
+    console.log('📱 Submitting mobile money OTP...');
+    
+    const response = await this.request<{ data: { status: string; reference: string; message: string } }>('/payment/mobile-money/submit-otp', {
+      method: 'POST',
+      body: JSON.stringify({
+        collection_id: collectionId,
+        otp: otp
+      }),
+    });
+    
+    console.log('✅ Mobile money OTP submitted');
+    return response;
+  }
+
+  async verifyPayment(reference: string): Promise<{ data: any }> {
+    console.log('🔍 Verifying payment:', reference);
+    
+    const response = await this.request<{ data: any }>(`/payment/verify/${reference}`);
+    
+    console.log('✅ Payment verification completed');
+    return response;
+  }
+
+  async getPaymentStatus(orderId: number): Promise<{ payment: any }> {
+    console.log('💳 Getting payment status for order:', orderId);
+    
+    const response = await this.request<{ payment: any }>(`/payment/status/${orderId}`);
+    
+    console.log('✅ Payment status fetched');
     return response;
   }
 }

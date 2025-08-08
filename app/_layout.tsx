@@ -5,6 +5,8 @@ import { StatusBar } from 'expo-status-bar';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import { apiService, type User } from './services/api';
+import { socketService } from './services/socketService';
+import { notificationService } from './services/notificationService';
 
 interface AuthContextType {
   user: User | null;
@@ -72,6 +74,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
           // Update stored user data if different
           await AsyncStorage.setItem('user', JSON.stringify(response.user));
           
+          // Initialize push notifications for authenticated user
+          try {
+            await notificationService.initialize();
+          } catch (error) {
+            console.warn('⚠️ Failed to initialize push notifications:', error);
+          }
+          
           console.log('✅ Auth status: Authenticated');
           return true;
         } catch (error: any) {
@@ -86,6 +95,13 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
             const response = await apiService.getCurrentUser();
             setUser(response.user);
             await AsyncStorage.setItem('user', JSON.stringify(response.user));
+            
+            // Initialize push notifications after token refresh
+            try {
+              await notificationService.initialize();
+            } catch (error) {
+              console.warn('⚠️ Failed to initialize push notifications after token refresh:', error);
+            }
             
             console.log('✅ Token refreshed successfully');
             return true;
@@ -131,6 +147,24 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         
         // Store user data explicitly (apiService already stores tokens)
         await AsyncStorage.setItem('user', JSON.stringify(response.user));
+        
+        // Connect to real-time messaging
+        try {
+          const socketConnected = await socketService.connect();
+          console.log(socketConnected ? '✅ Socket connected' : '⚠️ Socket connection failed');
+        } catch (socketError) {
+          console.warn('⚠️ Socket connection failed:', socketError);
+          // Don't fail login if socket connection fails
+        }
+        
+        // Initialize push notifications
+        try {
+          const notificationsEnabled = await notificationService.initialize();
+          console.log(notificationsEnabled ? '✅ Notifications initialized' : '⚠️ Notifications not available');
+        } catch (notificationError) {
+          console.warn('⚠️ Notification initialization failed:', notificationError);
+          // Don't fail login if notification setup fails
+        }
         
         console.log('✅ Login successful');
         return true;
@@ -179,6 +213,24 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
         // Store user data explicitly (apiService already stores tokens)
         await AsyncStorage.setItem('user', JSON.stringify(response.user));
         
+        // Connect to real-time messaging
+        try {
+          const socketConnected = await socketService.connect();
+          console.log(socketConnected ? '✅ Socket connected' : '⚠️ Socket connection failed');
+        } catch (socketError) {
+          console.warn('⚠️ Socket connection failed:', socketError);
+          // Don't fail registration if socket connection fails
+        }
+        
+        // Initialize push notifications
+        try {
+          const notificationsEnabled = await notificationService.initialize();
+          console.log(notificationsEnabled ? '✅ Notifications initialized' : '⚠️ Notifications not available');
+        } catch (notificationError) {
+          console.warn('⚠️ Notification initialization failed:', notificationError);
+          // Don't fail registration if notification setup fails
+        }
+        
         console.log('✅ Registration successful');
         return true;
       } else {
@@ -225,6 +277,14 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (logoutError: any) {
         console.warn('⚠️ Server logout failed (continuing with local cleanup):', logoutError.message);
         // Continue with local cleanup even if server call fails
+      }
+      
+      // Disconnect from real-time messaging
+      try {
+        socketService.disconnect();
+        console.log('✅ Socket disconnected');
+      } catch (socketError) {
+        console.warn('⚠️ Socket disconnect failed:', socketError);
       }
       
       // Clear local state and storage
@@ -309,8 +369,10 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <AuthScreens />
-      <StatusBar style="auto" />
+      <>
+        <AuthScreens />
+        <StatusBar style="auto" />
+      </>
     </AuthProvider>
   );
 }

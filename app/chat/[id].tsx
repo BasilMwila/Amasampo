@@ -18,6 +18,7 @@ import {
 import { useAuth } from '../_layout';
 import { COLORS, DEFAULT_IMAGES } from '../constants/constants';
 import { apiService, type ChatUser, type Message } from '../services/api';
+import { socketService, type SocketMessage } from '../services/socketService';
 
 // Enhanced Message interface with product data
 interface EnhancedMessage extends Message {
@@ -116,15 +117,88 @@ export default function ChatScreen() {
   const [otherUser, setOtherUser] = useState<ChatUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    
     if (id) {
       loadConversation();
+      
+      // Initialize real-time messaging and store cleanup function
+      const initMessaging = async () => {
+        cleanup = await initializeRealTimeMessaging();
+      };
+      initMessaging();
     }
+    
+    return () => {
+      // Cleanup socket connections and event listeners
+      socketService.leaveChat();
+      if (cleanup) {
+        cleanup();
+      }
+    };
   }, [id]);
+  
+  // Initialize real-time messaging
+  const initializeRealTimeMessaging = async (): Promise<(() => void) | undefined> => {
+    try {
+      // Connect to socket if not already connected
+      const connected = await socketService.connect();
+      setIsSocketConnected(connected);
+      
+      if (connected && id) {
+        // Join the chat room
+        socketService.joinChat(Number(id));
+        
+        // Subscribe to new messages
+        const unsubscribeMessages = socketService.onNewMessage((socketMessage: SocketMessage) => {
+          console.log('📨 Received real-time message:', socketMessage);
+          
+          // Convert socket message to enhanced message format
+          const enhancedMessage: EnhancedMessage = {
+            id: socketMessage.id,
+            sender_id: socketMessage.sender_id,
+            receiver_id: socketMessage.receiver_id,
+            message_text: socketMessage.message_text,
+            message_type: socketMessage.message_type,
+            is_read: false,
+            created_at: socketMessage.created_at,
+            updated_at: socketMessage.created_at,
+            conversation_id: socketMessage.conversation_id,
+            sender_name: socketMessage.sender_name
+          };
+          
+          // Add message to the list if it's not already there
+          setMessages(prevMessages => {
+            const exists = prevMessages.some(msg => msg.id === socketMessage.id);
+            if (exists) return prevMessages;
+            
+            return [...prevMessages, enhancedMessage];
+          });
+        });
+        
+        // Subscribe to connection changes
+        const unsubscribeConnection = socketService.onConnectionChange((connected) => {
+          setIsSocketConnected(connected);
+        });
+        
+        // Return cleanup function
+        return () => {
+          unsubscribeMessages();
+          unsubscribeConnection();
+        };
+      }
+    } catch (error) {
+      console.error('❌ Failed to initialize real-time messaging:', error);
+    }
+    
+    return undefined;
+  };
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -173,13 +247,22 @@ export default function ChatScreen() {
     setSending(true);
 
     try {
-      const response = await apiService.sendConversationMessage(
-        otherUser.id, 
-        messageText, 
-        'text'
-      );
-
-      setMessages(prevMessages => [...prevMessages, response.data]);
+      // Try to send via socket first (real-time)
+      if (isSocketConnected) {
+        console.log('📤 Sending message via socket');
+        socketService.sendMessage(otherUser.id, messageText, 'text');
+      } else {
+        // Fallback to HTTP only when socket is not connected
+        console.log('📤 Sending message via HTTP (socket not connected)');
+        const response = await apiService.sendConversationMessage(
+          otherUser.id, 
+          messageText, 
+          'text'
+        );
+        
+        // Add message to list since no real-time update
+        setMessages(prevMessages => [...prevMessages, response.data]);
+      }
 
       console.log('✅ Message sent successfully');
       
@@ -335,6 +418,13 @@ export default function ChatScreen() {
       >
         {/* Chat Header */}
         <View style={styles.header}>
+          {/* Connection status indicator */}
+          <View style={[styles.connectionStatus, isSocketConnected ? styles.connected : styles.disconnected]}>
+            <View style={[styles.connectionDot, { backgroundColor: isSocketConnected ? '#10B981' : '#EF4444' }]} />
+            <Text style={styles.statusText}>
+              {isSocketConnected ? 'Real-time' : 'Offline'}
+            </Text>
+          </View>
           <TouchableOpacity onPress={() => router.back()}>
             <Text style={styles.backIcon}>←</Text>
           </TouchableOpacity>
@@ -523,6 +613,35 @@ const styles = StyleSheet.create({
   },
   headerButtonText: {
     fontSize: 16,
+  },
+  connectionStatus: {
+    position: 'absolute',
+    top: -8,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.CARD,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  connected: {
+    borderColor: '#10B981',
+  },
+  disconnected: {
+    borderColor: '#EF4444',
+  },
+  connectionDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginRight: 4,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: '500',
+    color: COLORS.TEXT_SECONDARY,
   },
   messagesList: {
     flex: 1,

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // File: app/notifications/index.tsx
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Alert,
     FlatList,
@@ -12,6 +12,8 @@ import {
     View,
 } from 'react-native';
 import { useAuth } from '../_layout';
+import { apiService } from '../services/api';
+import { notificationService } from '../services/notificationService';
 
 interface Notification {
   id: number;
@@ -110,8 +112,34 @@ const mockNotifications: Notification[] = [
 export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
   const [selectedTab, setSelectedTab] = useState<'all' | 'unread'>('all');
+  const [pushTokenStatus, setPushTokenStatus] = useState<string>('Unknown');
+  const [permissionGranted, setPermissionGranted] = useState<boolean>(false);
   const { user } = useAuth();
   const router = useRouter();
+
+  useEffect(() => {
+    checkNotificationStatus();
+    loadNotifications();
+  }, []);
+
+  const checkNotificationStatus = () => {
+    const isGranted = notificationService.isPermissionGranted();
+    const token = notificationService.getPushTokenSync();
+    
+    setPermissionGranted(isGranted);
+    setPushTokenStatus(token ? 'Registered' : 'Not Available');
+  };
+
+  const loadNotifications = async () => {
+    try {
+      const response = await apiService.getNotifications();
+      // For now, keeping mock data since backend might not be connected
+      console.log('Notifications from API:', response);
+    } catch (error) {
+      console.warn('Failed to load notifications from API:', error);
+      // Keep using mock data
+    }
+  };
 
   const filteredNotifications = selectedTab === 'unread' 
     ? notifications.filter(n => !n.isRead)
@@ -196,6 +224,37 @@ export default function NotificationsScreen() {
     // Navigate to action URL if available
     if (notification.actionUrl) {
       router.push(notification.actionUrl as any);
+    }
+  };
+
+  const testPushNotification = async () => {
+    try {
+      await notificationService.showLocalNotification({
+        type: 'order',
+        title: 'Test Notification 🧪',
+        body: 'This is a test push notification from your app!',
+        data: { type: 'test' }
+      });
+      
+      Alert.alert('Test Sent!', 'A test notification should appear shortly.');
+    } catch (error) {
+      Alert.alert('Test Failed', 'Failed to send test notification.');
+      console.error('Test notification failed:', error);
+    }
+  };
+
+  const requestNotificationPermission = async () => {
+    try {
+      const success = await notificationService.initialize();
+      if (success) {
+        checkNotificationStatus();
+        Alert.alert('Permissions Granted!', 'Push notifications are now enabled.');
+      } else {
+        Alert.alert('Permission Denied', 'Please enable notifications in your device settings.');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to request notification permissions.');
+      console.error('Permission request failed:', error);
     }
   };
 
@@ -336,19 +395,50 @@ export default function NotificationsScreen() {
         </View>
       )}
 
-      {/* Notification Settings Quick Access */}
-      {filteredNotifications.length > 0 && (
-        <View style={styles.settingsHint}>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => router.push('/settings/notifications' as any)}
+      {/* Push Notification Status & Testing */}
+      <View style={styles.statusContainer}>
+        <Text style={styles.statusTitle}>Push Notification Status</Text>
+        <View style={styles.statusRow}>
+          <Text style={styles.statusLabel}>Permissions:</Text>
+          <Text style={[styles.statusValue, { color: permissionGranted ? '#10b981' : '#ef4444' }]}>
+            {permissionGranted ? '✅ Granted' : '❌ Not Granted'}
+          </Text>
+        </View>
+        <View style={styles.statusRow}>
+          <Text style={styles.statusLabel}>Push Token:</Text>
+          <Text style={styles.statusValue}>{pushTokenStatus}</Text>
+        </View>
+        
+        <View style={styles.testButtons}>
+          {!permissionGranted && (
+            <TouchableOpacity 
+              style={styles.enableButton}
+              onPress={requestNotificationPermission}
+            >
+              <Text style={styles.enableButtonText}>Enable Notifications</Text>
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity 
+            style={styles.testButton}
+            onPress={testPushNotification}
           >
-            <Text style={styles.settingsButtonText}>
-              ⚙️ Notification Settings
-            </Text>
+            <Text style={styles.testButtonText}>🧪 Test Local Notification</Text>
           </TouchableOpacity>
         </View>
-      )}
+      </View>
+
+      {/* Notification Settings Quick Access */}
+      <View style={styles.settingsHint}>
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => router.push('/settings/notifications' as any)}
+        >
+          <Text style={styles.settingsButtonText}>
+            ⚙️ Notification Settings
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
@@ -527,6 +617,62 @@ const styles = StyleSheet.create({
   },
   settingsButtonText: {
     fontSize: 14,
+    color: '#6b7280',
+  },
+  statusContainer: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    marginBottom: 12,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  statusLabel: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  statusValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#1a1a1a',
+  },
+  testButtons: {
+    marginTop: 12,
+    gap: 8,
+  },
+  enableButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  enableButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ffffff',
+  },
+  testButton: {
+    backgroundColor: '#f3f4f6',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  testButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
     color: '#6b7280',
   },
 });

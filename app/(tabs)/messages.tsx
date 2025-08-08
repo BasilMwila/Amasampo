@@ -1,6 +1,6 @@
 // app/(tabs)/messages.tsx - Updated with real API integration
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -15,6 +15,7 @@ import {
 import { useAuth } from '../_layout';
 import { COLORS, DEFAULT_IMAGES } from '../constants/constants';
 import { apiService } from '../services/api';
+import { socketService, type MessageNotification } from '../services/socketService';
 
 interface Conversation {
   other_user: {
@@ -36,6 +37,7 @@ export default function MessagesScreen() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -43,8 +45,43 @@ export default function MessagesScreen() {
   useFocusEffect(
     useCallback(() => {
       loadConversations();
+      initializeRealTimeUpdates();
     }, [])
   );
+  
+  // Initialize real-time updates for message notifications
+  const initializeRealTimeUpdates = async () => {
+    try {
+      // Connect to socket if not already connected
+      const connected = await socketService.connect();
+      setIsSocketConnected(connected);
+      
+      if (connected) {
+        console.log('✅ Messages screen connected to socket');
+        
+        // Subscribe to message notifications to update conversation list
+        const unsubscribeNotifications = socketService.onMessageNotification((notification: MessageNotification) => {
+          console.log('🔔 Messages screen received notification:', notification.senderName);
+          
+          // Refresh conversations to show new message
+          loadConversations(true);
+        });
+        
+        // Subscribe to connection changes
+        const unsubscribeConnection = socketService.onConnectionChange((connected) => {
+          setIsSocketConnected(connected);
+        });
+        
+        // Return cleanup function
+        return () => {
+          unsubscribeNotifications();
+          unsubscribeConnection();
+        };
+      }
+    } catch (error) {
+      console.error('❌ Failed to initialize real-time updates:', error);
+    }
+  };
 
   const loadConversations = async (isRefresh = false) => {
     try {
@@ -198,6 +235,13 @@ export default function MessagesScreen() {
               : `${conversations.length} conversation${conversations.length !== 1 ? 's' : ''}`
             }
           </Text>
+          {/* Real-time connection indicator */}
+          <View style={[styles.connectionIndicator, isSocketConnected ? styles.connectedIndicator : styles.disconnectedIndicator]}>
+            <View style={[styles.connectionDot, { backgroundColor: isSocketConnected ? '#10B981' : '#EF4444' }]} />
+            <Text style={styles.connectionText}>
+              {isSocketConnected ? 'Real-time updates' : 'Offline mode'}
+            </Text>
+          </View>
         </View>
         
         {/* You could add a compose button here */}
@@ -262,6 +306,32 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.TEXT_SECONDARY,
     marginTop: 4,
+  },
+  connectionIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  connectedIndicator: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+  },
+  disconnectedIndicator: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+  },
+  connectionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  connectionText: {
+    fontSize: 11,
+    color: COLORS.TEXT_SECONDARY,
+    fontWeight: '500',
   },
   refreshButton: {
     width: 40,
