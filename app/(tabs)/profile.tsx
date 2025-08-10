@@ -44,6 +44,7 @@ export default function ProfileScreen() {
           { icon: '📊', title: 'Dashboard', subtitle: 'Sales overview & analytics', route: '/dashboard' },
           { icon: '📦', title: 'Sales Orders', subtitle: 'Manage customer orders', route: '/orders' },
           { icon: '📝', title: 'Manage Products', subtitle: 'Edit your product catalog', route: '/products/manage' },
+          { icon: '🗺️', title: 'Shop Location', subtitle: 'Set your location to appear on map', route: '/seller-profile' },
         ] : []),
         { icon: '💳', title: 'Payment Methods', subtitle: 'Manage your payment options', route: '/payment/methods' },
       ]

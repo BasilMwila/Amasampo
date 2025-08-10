@@ -4,6 +4,7 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Image,
   SafeAreaView,
@@ -90,6 +91,11 @@ export default function HomeScreen() {
 
   const handleNotifications = () => {
     router.push('/notifications' as any);
+  };
+
+  const handleMap = () => {
+    console.log('Map button pressed!');
+    router.push('/map' as any);
   };
 
   const ProductCard = ({ product, isHorizontal = false }: { product: Product; isHorizontal?: boolean }) => {
@@ -372,6 +378,16 @@ export default function HomeScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* Floating Map Button - Always Visible */}
+      <TouchableOpacity 
+        style={styles.floatingMapButton} 
+        onPress={handleMap}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.floatingMapText}>MAP</Text>
+      </TouchableOpacity>
+
     </SafeAreaView>
   );
 }
@@ -719,5 +735,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#374151',
+  },
+  floatingMapButton: {
+    position: 'absolute',
+    bottom: 100, // Move up to avoid tab bar
+    right: 20,
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 15,
+    zIndex: 1000,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+  },
+  floatingMapText: {
+    fontSize: 14,
+    color: '#ffffff',
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });

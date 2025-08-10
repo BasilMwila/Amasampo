@@ -9,7 +9,11 @@
       "Bash(npm install:*)",
       "Bash(ping:*)",
       "Bash(npx expo start:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(mkdir:*)",
+      "Bash(npm start:*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }

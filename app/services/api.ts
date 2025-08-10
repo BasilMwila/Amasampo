@@ -214,6 +214,43 @@ export interface Notification {
   updated_at: string;
 }
 
+export interface SellerLocation {
+  id: number;
+  name: string;
+  shop_name?: string;
+  shop_address?: string;
+  shop_city?: string;
+  shop_state?: string;
+  shop_country?: string;
+  latitude: number;
+  longitude: number;
+  avatar_url?: string;
+  business_hours?: any;
+  shop_description?: string;
+  product_count: number;
+  average_rating: number;
+}
+
+export interface SellerProfile {
+  id: number;
+  name: string;
+  shop_name?: string;
+  shop_address?: string;
+  shop_city?: string;
+  shop_state?: string;
+  shop_country?: string;
+  latitude?: number;
+  longitude?: number;
+  avatar_url?: string;
+  business_hours?: any;
+  shop_description?: string;
+  phone?: string;
+  created_at: string;
+  product_count: number;
+  average_rating: number;
+  total_orders: number;
+}
+
 export interface LoginResponse {
   user: User;
   tokens: {
@@ -258,7 +295,7 @@ class ApiService {
   private baseURL: string;
   private defaultTimeout: number = 30000;
   
-  private getBaseURL(): string {
+  public getBaseURL(): string {
     // Use environment variable if available, otherwise use updated IP
     const envUrl = process.env.EXPO_PUBLIC_API_URL;
     const defaultUrl = 'http://192.168.0.184:3000'; // Updated IP
@@ -390,14 +427,28 @@ class ApiService {
       return undefined;
     }
 
-    // If it's already a complete URL, return as is
+    const currentBaseUrl = this.baseURL.replace('/api', '');
+
+    // If it's already a complete URL, normalize it to use current server IP
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      console.log('📷 Using complete image URL:', imageUrl);
+      // Extract the path part after the domain/port
+      const urlParts = imageUrl.split('/');
+      const pathIndex = urlParts.findIndex(part => part === 'uploads');
+      
+      if (pathIndex > -1) {
+        // Reconstruct URL with current base URL
+        const pathPart = '/' + urlParts.slice(pathIndex).join('/');
+        const normalizedUrl = `${currentBaseUrl}${pathPart}`;
+        console.log('📷 Normalized image URL from', imageUrl, 'to', normalizedUrl);
+        return normalizedUrl;
+      }
+      
+      console.log('📷 Using complete image URL as-is:', imageUrl);
       return imageUrl;
     }
 
     // If it's a relative path, prepend the base URL
-    const fullImageUrl = `${this.baseURL.replace('/api', '')}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
+    const fullImageUrl = `${currentBaseUrl}${imageUrl.startsWith('/') ? '' : '/'}${imageUrl}`;
     console.log('📷 Converted relative path to full URL:', fullImageUrl);
     return fullImageUrl;
   }
@@ -696,7 +747,7 @@ class ApiService {
   async updateProfile(userData: Partial<User>): Promise<{ user: User }> {
     console.log('👤 Updating profile');
     
-    const response = await this.request<{ user: User }>('/users/profile', {
+    const response = await this.request<{ user: User }>('/user/profile', {
       method: 'PUT',
       body: JSON.stringify(userData),
     });
@@ -1662,6 +1713,87 @@ class ApiService {
     const response = await this.request<{ payment: any }>(`/payment/status/${orderId}`);
     
     console.log('✅ Payment status fetched');
+    return response;
+  }
+
+  // Seller Location methods
+  async getSellersWithLocations(filters?: {
+    city?: string;
+    state?: string; 
+    country?: string;
+    bounds?: { swLat: number; swLng: number; neLat: number; neLng: number };
+  }): Promise<{ sellers: SellerLocation[]; total: number }> {
+    console.log('🗺️ Fetching sellers with locations...');
+    
+    const params = new URLSearchParams();
+    if (filters) {
+      if (filters.city) params.append('city', filters.city);
+      if (filters.state) params.append('state', filters.state);
+      if (filters.country) params.append('country', filters.country);
+      if (filters.bounds) params.append('bounds', JSON.stringify(filters.bounds));
+    }
+
+    const endpoint = `/sellers/locations${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await this.request<{ sellers: SellerLocation[]; total: number }>(endpoint);
+    
+    console.log(`✅ Fetched ${response.sellers.length} sellers with locations`);
+    return response;
+  }
+
+  async getSellerProfile(sellerId: number, options?: {
+    page?: number;
+    limit?: number;
+    category?: string;
+    sort?: 'newest' | 'price_low' | 'price_high' | 'popular' | 'rating';
+  }): Promise<{ 
+    seller: SellerProfile; 
+    products: Product[]; 
+    categories: { id: number; name: string; product_count: number }[];
+    pagination: PaginationInfo 
+  }> {
+    console.log('👤 Fetching seller profile:', sellerId);
+    
+    const params = new URLSearchParams();
+    if (options) {
+      if (options.page) params.append('page', options.page.toString());
+      if (options.limit) params.append('limit', options.limit.toString());
+      if (options.category) params.append('category', options.category);
+      if (options.sort) params.append('sort', options.sort);
+    }
+
+    const endpoint = `/sellers/${sellerId}/profile${params.toString() ? `?${params.toString()}` : ''}`;
+    const response = await this.request<{ 
+      seller: SellerProfile; 
+      products: Product[]; 
+      categories: { id: number; name: string; product_count: number }[];
+      pagination: PaginationInfo 
+    }>(endpoint);
+    
+    // Process image URLs in products
+    const processedProducts = response.products.map(product => this.processProductData(product));
+    
+    console.log(`✅ Fetched seller profile with ${processedProducts.length} products`);
+    return { ...response, products: processedProducts };
+  }
+
+  async updateSellerLocation(locationData: {
+    shop_address: string;
+    shop_city: string;
+    shop_state?: string;
+    shop_country?: string;
+    latitude: number;
+    longitude: number;
+    business_hours?: any;
+    shop_description?: string;
+  }): Promise<{ message: string; location: any }> {
+    console.log('📍 Updating seller location...');
+    
+    const response = await this.request<{ message: string; location: any }>('/users/seller/location', {
+      method: 'PUT',
+      body: JSON.stringify(locationData),
+    });
+    
+    console.log('✅ Seller location updated');
     return response;
   }
 }
