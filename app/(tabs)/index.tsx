@@ -385,7 +385,7 @@ export default function HomeScreen() {
         onPress={handleMap}
         activeOpacity={0.8}
       >
-        <Text style={styles.floatingMapText}>MAP</Text>
+        <Text style={styles.floatingMapIcon}>📍</Text>
       </TouchableOpacity>
 
     </SafeAreaView>
@@ -741,9 +741,9 @@ const styles = StyleSheet.create({
     bottom: 100, // Move up to avoid tab bar
     right: 20,
     backgroundColor: '#3b82f6',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -752,13 +752,11 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 15,
     zIndex: 1000,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#ffffff',
   },
-  floatingMapText: {
-    fontSize: 14,
+  floatingMapIcon: {
+    fontSize: 24,
     color: '#ffffff',
-    fontWeight: '700',
-    textAlign: 'center',
   },
 });
